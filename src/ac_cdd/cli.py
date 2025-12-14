@@ -12,32 +12,18 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ac_cdd.config import settings
-
-# Import Orchestrator from the new package location
 from ac_cdd.orchestrator import CycleOrchestrator
+from .clients import GeminiClient, JulesClient, GitClient, ToolError
 
 load_dotenv()
 
 app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Development Orchestrator")
 console = Console()
 
-def run_cmd(cmd: list[str], input_text: str | None = None, check: bool = True) -> str:
-    """外部コマンド実行ヘルパー"""
-    try:
-        result = subprocess.run(  # noqa: S603
-            cmd,
-            input=input_text,
-            capture_output=True,
-            text=True,
-            check=check
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        typer.secho(f"Error executing command: {' '.join(cmd)}", fg=typer.colors.RED)
-        typer.secho(e.stderr, fg=typer.colors.RED)
-        if check:
-            raise typer.Exit(code=1) from e
-        return e.stdout + e.stderr
+# クライアントのインスタンス化
+gemini = GeminiClient()
+jules = JulesClient()
+git = GitClient()
 
 @app.command()
 def init():
@@ -139,36 +125,33 @@ def audit(repo: str = typer.Option(None, help="Target repository")):
     """
     [Strict Review] Gitの差分をGeminiに激辛レビューさせ、Julesに修正指示を出します。
     """
-    if not shutil.which("gemini") or not shutil.which("jules"):
-        typer.secho("Error: 'gemini' or 'jules' CLI not found.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
     typer.echo("🔍 Fetching git diff...")
-    diff_output = run_cmd(["git", "diff", "HEAD"], check=False)
+    try:
+        diff_output = git.get_diff("HEAD")
+        if not diff_output:
+            typer.secho("No changes detected to audit.", fg=typer.colors.YELLOW)
+            return
 
-    if not diff_output:
-        typer.secho("No changes detected to audit.", fg=typer.colors.YELLOW)
-        return
+        typer.echo("🧠 Gemini is thinking (Strict Review Mode)...")
+        prompt = (
+            "You are a Staff Engineer at Google. Conduct a 'Strict Review' of the input diff "
+            "focusing on Security, Performance, and Readability. "
+            "Output ONLY specific, actionable instructions for an AI coder (Jules) as a bulleted "
+            "list.\n\nGit Diff:\n"
+        )
 
-    typer.echo("🧠 Gemini is thinking (Strict Review Mode)...")
-    prompt = (
-        "You are a Staff Engineer at Google. Conduct a 'Strict Review' of the input diff "
-        "focusing on Security, Performance, and Readability. "
-        "Output ONLY specific, actionable instructions for an AI coder (Jules) as a bulleted list."
-        "\n\nGit Diff:\n"
-    )
+        # クライアント経由で実行
+        review_instruction = gemini.generate_content(prompt + diff_output)
 
-    # Geminiへの問い合わせ
-    gemini_instruction = run_cmd(["gemini", "-p", prompt + diff_output])
+        typer.echo("🤖 Jules is taking over...")
+        result = jules.create_session(review_instruction, repo=repo)
 
-    typer.echo("🤖 Jules is taking over...")
-    cmd = ["jules", "new", gemini_instruction]
-    if repo:
-        cmd.extend(["--repo", repo])
+        typer.secho(f"✅ Audit complete. Fix task assigned to Jules!", fg=typer.colors.GREEN)
+        typer.echo(result)
 
-    jules_output = run_cmd(cmd)
-    typer.secho(f"✅ Audit complete. Fix task assigned to Jules!", fg=typer.colors.GREEN)
-    typer.echo(jules_output)
+    except ToolError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
 
 @app.command()
 def fix():
@@ -176,36 +159,64 @@ def fix():
     [Auto Fix] テストを実行し、失敗した場合にJulesに修正させます。
     """
     typer.echo("🧪 Running tests with pytest...")
-    # テスト実行（失敗を許容）
-    output = run_cmd(["uv", "run", "pytest"], check=False)
+    # NOTE: テストランナーもClient化しても良いが、一旦subprocessで実行
 
-    if "failed" not in output and "error" not in output:
-         typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
-         return
+    # S603: subprocess call safe because args are hardcoded
+    # S607: Use shutil.which to resolve 'uv' full path
+    uv_path = shutil.which("uv")
+    if not uv_path:
+        typer.secho("Error: 'uv' not found.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    result = subprocess.run([uv_path, "run", "pytest"], capture_output=True, text=True) # noqa: S603
+
+    if result.returncode == 0:
+        typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
+        return
 
     typer.secho("💥 Tests failed! Invoking Jules for repairs...", fg=typer.colors.RED)
 
-    prompt = f"Tests failed. Analyze the logs and fix the code in src/.\n\nLogs:\n{output}"
-    run_cmd(["jules", "new", prompt])
-    typer.secho("✅ Fix task assigned to Jules.", fg=typer.colors.GREEN)
+    try:
+        prompt = (
+            f"Tests failed. Analyze the logs and fix the code in src/.\n\n"
+            f"Logs:\n{result.stdout}\n{result.stderr}"
+        )
+        jules.create_session(prompt)
+        typer.secho("✅ Fix task assigned to Jules.", fg=typer.colors.GREEN)
+    except ToolError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
 
 @app.command()
 def doctor():
-    """環境チェック（APIキーや依存ツールの確認）"""
-    tools = ["git", "uv", "gh", "jules", "gemini"]
+    """環境チェック（Interactive Doctorへの改善）"""
+
+    # ツールとインストールガイドの辞書
+    tools = {
+        "git": "Install Git from https://git-scm.com/",
+        "uv": "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh",
+        "gh": "Install GitHub CLI: https://cli.github.com/",
+        "jules": "Install Jules CLI (Internal Tool)",
+        "gemini": "Install Gemini CLI (Internal Tool)"
+    }
+
     all_ok = True
-    for tool in tools:
+    typer.echo("Checking development environment...\n")
+
+    for tool, instruction in tools.items():
         path = shutil.which(tool)
-        status = "✅ Found" if path else "❌ Missing"
-        color = typer.colors.GREEN if path else typer.colors.RED
-        if not path:
+        if path:
+            typer.secho(f"✅ {tool:<10}: Found at {path}", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"❌ {tool:<10}: MISSING", fg=typer.colors.RED)
+            typer.echo(f"   Action: {instruction}")
             all_ok = False
-        typer.secho(f"{tool:<10}: {status}", fg=color)
 
     if all_ok:
-        typer.secho("\nSystem is ready for AI-Native Development.", fg=typer.colors.GREEN)
+        typer.secho("\n✨ System is ready for AI-Native Development.", fg=typer.colors.GREEN)
     else:
-        typer.secho("\nPlease install missing tools.", fg=typer.colors.RED)
+        typer.secho("\n⚠️  Please install missing tools to proceed.", fg=typer.colors.YELLOW)
+        raise typer.Exit(1)
 
 if __name__ == "__main__":
     app()
