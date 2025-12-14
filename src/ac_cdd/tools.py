@@ -1,8 +1,9 @@
 import shutil
 import subprocess
-from pathlib import Path
-from typing import List, Optional
+from typing import List
+
 from .utils import logger
+
 
 class ToolNotFoundError(Exception):
     pass
@@ -13,7 +14,13 @@ class ToolWrapper:
         if not shutil.which(command):
             raise ToolNotFoundError(f"Command '{command}' not found in PATH.")
 
-    def run(self, args: List[str], capture_output: bool = False, check: bool = True, text: bool = True) -> subprocess.CompletedProcess:
+    def run(
+        self,
+        args: List[str],
+        capture_output: bool = False,
+        check: bool = True,
+        text: bool = True
+    ) -> subprocess.CompletedProcess:
         full_cmd = [self.command] + args
         logger.debug(f"Running command: {' '.join(full_cmd)}")
         try:
