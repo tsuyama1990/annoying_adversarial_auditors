@@ -1,16 +1,30 @@
-import typer
-import subprocess
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
-app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Development Orchestrator")
+import typer
+from dotenv import load_dotenv
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
-def run_cmd(cmd: list[str], input_text: Optional[str] = None, check: bool = True) -> str:
+from ac_cdd.config import settings
+
+# Import Orchestrator from the new package location
+from ac_cdd.orchestrator import CycleOrchestrator
+
+load_dotenv()
+
+app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Development Orchestrator")
+console = Console()
+
+def run_cmd(cmd: list[str], input_text: str | None = None, check: bool = True) -> str:
     """外部コマンド実行ヘルパー"""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             cmd,
             input=input_text,
             capture_output=True,
@@ -22,26 +36,103 @@ def run_cmd(cmd: list[str], input_text: Optional[str] = None, check: bool = True
         typer.secho(f"Error executing command: {' '.join(cmd)}", fg=typer.colors.RED)
         typer.secho(e.stderr, fg=typer.colors.RED)
         if check:
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from e
         return e.stdout + e.stderr
 
-# --- Cycle Workflow (Auditで評価されていた既存ロジックのプレースホルダ) ---
 @app.command()
+def init():
+    """プロジェクトの初期化と依存関係チェック"""
+    console.print(Panel("AC-CDD環境の初期化中...", style="bold blue"))
+
+    # Use tools from config
+    checks = [
+        (settings.tools.uv_cmd, "パッケージ管理には uv が必要です。"),
+        (settings.tools.gh_cmd, "PR管理には GitHub CLI (gh) が必要です。"),
+        (settings.tools.jules_cmd, "AIコーディングには Jules CLI が必要です。"),
+        (settings.tools.gemini_cmd, "監査には Gemini CLI が必要です。"),
+    ]
+
+    all_pass = True
+    for cmd, msg in checks:
+        if not shutil.which(cmd):
+            console.print(f"[red]✖ {cmd} が見つかりません。[/red] {msg}")
+            all_pass = False
+        else:
+            console.print(f"[green]✔ {cmd} が見つかりました。[/green]")
+
+    if not Path(".env").exists():
+        console.print(
+            "[yellow]⚠ .env ファイルが見つかりません。.env.example から作成します...[/yellow]"
+        )
+        if Path(".env.example").exists():
+            shutil.copy(".env.example", ".env")
+            console.print(
+                "[green]✔ .env を作成しました。APIキーなどを入力してください。[/green]"
+            )
+        else:
+            console.print("[red]✖ .env.example が見つかりません。[/red]")
+            all_pass = False
+    else:
+        console.print("[green]✔ .env ファイルを確認しました。[/green]")
+
+    if all_pass:
+        console.print(Panel("初期化完了！開発を開始できます。", style="bold green"))
+    else:
+        console.print(
+            Panel("初期化に失敗しました。上記のエラーを確認してください。", style="bold red")
+        )
+        raise typer.Exit(code=1)
+
+# --- Cycle Workflow ---
+
+@app.command(name="new-cycle")
 def new_cycle(name: str):
-    """新しい開発サイクルを作成します (Cycle XX)"""
-    typer.echo(f"Creating new cycle: {name}...")
-    # ここにCycleOrchestratorの呼び出しロジックが入る想定
-    # from .orchestrator import CycleOrchestrator
-    # CycleOrchestrator().create_cycle(name)
+    """新しい開発サイクルを作成します (例: 01, 02)"""
+    # Assuming 'name' corresponds to cycle_id like '01'
+    cycle_id = name
+    base_path = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
+    if base_path.exists():
+        console.print(f"[red]サイクル {cycle_id} は既に存在します！[/red]")
+        raise typer.Exit(code=1)
 
-@app.command()
-def start_cycle(name: str):
-    """サイクルの実装ループを開始します"""
-    typer.echo(f"Starting cycle: {name}...")
-    # CycleOrchestrator().run_cycle(name)
+    base_path.mkdir(parents=True)
+    templates_dir = Path(settings.paths.documents_dir) / "templates"
 
+    # Copy templates
+    shutil.copy(templates_dir / "SPEC_TEMPLATE.md", base_path / "SPEC.md")
+    shutil.copy(templates_dir / "UAT_TEMPLATE.md", base_path / "UAT.md")
+    shutil.copy(templates_dir / "schema_template.py", base_path / "schema.py")
 
-# --- Ad-hoc Workflow (Auditで欠落していると指摘された機能) ---
+    console.print(f"[green]新しいサイクルを作成しました: CYCLE{cycle_id}[/green]")
+    console.print(f"[bold]{base_path}[/bold] 内のファイルを編集してください。")
+
+@app.command(name="start-cycle")
+def start_cycle(name: str, dry_run: bool = False):
+    """サイクルの自動実装・監査ループを開始します"""
+    cycle_id = name
+    console.print(Panel(f"サイクル {cycle_id} の自動化を開始します", style="bold magenta"))
+    if dry_run:
+        console.print(
+            "[yellow][DRY-RUN MODE] 実際のAPI呼び出しやコミットは行われません。[/yellow]"
+        )
+
+    orchestrator = CycleOrchestrator(cycle_id, dry_run=dry_run)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("[cyan]実行中...", total=None)
+
+        try:
+            orchestrator.execute_all(progress_task=task, progress_obj=progress)
+            console.print(Panel(f"サイクル {cycle_id} が正常に完了しました！", style="bold green"))
+        except Exception as e:
+            console.print(Panel(f"サイクル失敗: {str(e)}", style="bold red"))
+            raise typer.Exit(code=1) from e
+
+# --- Ad-hoc Workflow ---
 
 @app.command()
 def audit(repo: str = typer.Option(None, help="Target repository")):
@@ -68,7 +159,6 @@ def audit(repo: str = typer.Option(None, help="Target repository")):
     )
 
     # Geminiへの問い合わせ
-    # Note: gemini CLIの仕様に合わせて引数渡しに変更
     gemini_instruction = run_cmd(["gemini", "-p", prompt + diff_output])
 
     typer.echo("🤖 Jules is taking over...")
@@ -108,7 +198,8 @@ def doctor():
         path = shutil.which(tool)
         status = "✅ Found" if path else "❌ Missing"
         color = typer.colors.GREEN if path else typer.colors.RED
-        if not path: all_ok = False
+        if not path:
+            all_ok = False
         typer.secho(f"{tool:<10}: {status}", fg=color)
 
     if all_ok:
