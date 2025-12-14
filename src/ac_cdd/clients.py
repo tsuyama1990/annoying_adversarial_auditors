@@ -1,5 +1,4 @@
 import subprocess
-from typing import Optional
 
 
 class ToolError(Exception):
@@ -8,7 +7,7 @@ class ToolError(Exception):
 
 
 class BaseClient:
-    def _run_cmd(self, cmd: list[str], input_text: Optional[str] = None) -> str:
+    def _run_cmd(self, cmd: list[str], input_text: str | None = None) -> str:
         """コマンド実行の共通ラッパー"""
         try:
             # S603: subprocess call - check=True ensures safety against shell injection
@@ -35,7 +34,7 @@ class GeminiClient(BaseClient):
 
 
 class JulesClient(BaseClient):
-    def create_session(self, prompt: str, repo: Optional[str] = None) -> str:
+    def create_session(self, prompt: str, repo: str | None = None) -> str:
         """Julesセッションを作成"""
         cmd = ["jules", "new", prompt]
         if repo:

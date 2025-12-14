@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Tuple
 
 from .config import settings
 from .gemini_api_client import GeminiApiClient
@@ -243,7 +242,7 @@ class CycleOrchestrator:
             session_name=f"Cycle{self.cycle_id}_Implementation"
         )
 
-    def _run_tests(self) -> Tuple[bool, str]:
+    def _run_tests(self) -> tuple[bool, str]:
         """
         Runs tests locally using uv run pytest and captures logs.
         Returns (success: bool, logs: str)
@@ -259,12 +258,12 @@ class CycleOrchestrator:
         cmd = [uv_path, "run", "pytest"]
         # Use simple subprocess run to capture output
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603
                 cmd,
                 capture_output=True,
                 text=True,
-                check=False
-            ) # noqa: S603
+                check=False,
+            )
 
             if result.returncode == 0:
                 return True, ""
