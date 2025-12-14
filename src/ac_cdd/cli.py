@@ -1,9 +1,6 @@
-import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from dotenv import load_dotenv
@@ -13,7 +10,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ac_cdd.config import settings
 from ac_cdd.orchestrator import CycleOrchestrator
-from .clients import GeminiClient, JulesClient, GitClient, ToolError
+
+from .clients import GeminiClient, GitClient, JulesClient, ToolError
 
 load_dotenv()
 
@@ -146,7 +144,7 @@ def audit(repo: str = typer.Option(None, help="Target repository")):
         typer.echo("🤖 Jules is taking over...")
         result = jules.create_session(review_instruction, repo=repo)
 
-        typer.secho(f"✅ Audit complete. Fix task assigned to Jules!", fg=typer.colors.GREEN)
+        typer.secho("✅ Audit complete. Fix task assigned to Jules!", fg=typer.colors.GREEN)
         typer.echo(result)
 
     except ToolError as e:
