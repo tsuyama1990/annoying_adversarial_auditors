@@ -136,8 +136,8 @@ def audit(repo: str = typer.Option(None, help="Target repository")):
         prompt = (
             "You are a Staff Engineer at Google. Conduct a 'Strict Review' of the input diff "
             "focusing on Security, Performance, and Readability. "
-            "Output ONLY specific, actionable instructions for an AI coder (Jules) as a bulleted list."
-            "\n\nGit Diff:\n"
+            "Output ONLY specific, actionable instructions for an AI coder (Jules) as a bulleted "
+            "list.\n\nGit Diff:\n"
         )
 
         # クライアント経由で実行
@@ -151,7 +151,7 @@ def audit(repo: str = typer.Option(None, help="Target repository")):
 
     except ToolError as e:
         typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 @app.command()
 def fix():
@@ -160,22 +160,32 @@ def fix():
     """
     typer.echo("🧪 Running tests with pytest...")
     # NOTE: テストランナーもClient化しても良いが、一旦subprocessで実行
+
     # S603: subprocess call safe because args are hardcoded
-    result = subprocess.run(["uv", "run", "pytest"], capture_output=True, text=True) # noqa: S603
+    # S607: Use shutil.which to resolve 'uv' full path
+    uv_path = shutil.which("uv")
+    if not uv_path:
+        typer.secho("Error: 'uv' not found.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    result = subprocess.run([uv_path, "run", "pytest"], capture_output=True, text=True) # noqa: S603
 
     if result.returncode == 0:
-         typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
-         return
+        typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
+        return
 
     typer.secho("💥 Tests failed! Invoking Jules for repairs...", fg=typer.colors.RED)
 
     try:
-        prompt = f"Tests failed. Analyze the logs and fix the code in src/.\n\nLogs:\n{result.stdout}\n{result.stderr}"
+        prompt = (
+            f"Tests failed. Analyze the logs and fix the code in src/.\n\n"
+            f"Logs:\n{result.stdout}\n{result.stderr}"
+        )
         jules.create_session(prompt)
         typer.secho("✅ Fix task assigned to Jules.", fg=typer.colors.GREEN)
     except ToolError as e:
         typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 @app.command()
 def doctor():
