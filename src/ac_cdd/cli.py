@@ -59,7 +59,8 @@ def init():
             if env_template.exists():
                 shutil.copy(env_template, ".env")
                 console.print(
-                    "[green]✔ .env を作成しました(テンプレートから)。APIキーなどを入力してください。[/green]"
+                    "[green]✔ .env を作成しました(テンプレートから)。"
+                    "APIキーなどを入力してください。[/green]"
                 )
             else:
                 console.print("[red]✖ .env.example が見つかりません。[/red]")
@@ -126,7 +127,9 @@ def start_cycle(names: list[str], dry_run: bool = False, auto_next: bool = False
 
             try:
                 orchestrator.execute_all(progress_task=task, progress_obj=progress)
-                console.print(Panel(f"サイクル {cycle_id} が正常に完了しました！", style="bold green"))
+                console.print(
+                    Panel(f"サイクル {cycle_id} が正常に完了しました！", style="bold green")
+                )
             except Exception as e:
                 console.print(Panel(f"サイクル {cycle_id} 失敗: {str(e)}", style="bold red"))
                 # If one cycle fails, should we stop or continue?

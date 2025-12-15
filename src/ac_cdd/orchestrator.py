@@ -446,21 +446,44 @@ class CycleOrchestrator:
     def run_strict_audit(self) -> bool:
         """
         Phase 3.4: 世界一厳格な監査
-        1. Bandit (Security)
+        1. Ruff (Lint & Fix)
         2. Mypy (Type Check)
-        3. LLM Audit (if checks pass)
+        3. Bandit (Security)
+        4. LLM Audit (if all static checks pass)
         """
         if self.dry_run:
             logger.info("[DRY-RUN] Static Analysis & Gemini Auditing... (Mocking approval)")
             return True
 
-        logger.info("Running Static Analysis (Bandit & Mypy)...")
+        logger.info("Running Static Analysis (Ruff, Mypy, Bandit)...")
 
-        # 1. Bandit
+        # 1. Ruff Check & Fix
         try:
-            self.audit_tool.run(["-r", "src/", "-ll"])
-        except Exception:
-            msg = "Security Check (Bandit) Failed."
+            # S607: We need full path for ruff.
+            # Assuming ruff is installed in the environment (uv should handle it)
+            # We can use `uv run ruff` or just `ruff` if in venv.
+            # Safe bet is using `uv run ruff` as configured in tools,
+            # but settings doesn't have ruff_cmd. Let's use shutil.which("ruff")
+            ruff_path = shutil.which("ruff")
+            if ruff_path:
+                # Run check with fix
+                subprocess.run(  # noqa: S603
+                    [ruff_path, "check", "--fix", "src/", "tests/"],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                # Run format
+                subprocess.run(  # noqa: S603
+                    [ruff_path, "format", "src/", "tests/"],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+            else:
+                logger.warning("Ruff not found. Skipping auto-fix.")
+        except subprocess.CalledProcessError as e:
+            msg = f"Linting (Ruff) Failed:\n{e.stdout}\n{e.stderr}"
             logger.warning(msg)
             self._log_audit_failure([msg])
             return False
@@ -468,13 +491,23 @@ class CycleOrchestrator:
         # 2. Mypy
         try:
             self.mypy.run(["src/"])
-        except Exception:
-            msg = "Type Check (Mypy) Failed."
+        except Exception as e:
+            # Ensure we catch the specific tool error or general exception and log details
+            msg = f"Type Check (Mypy) Failed: {e}"
             logger.warning(msg)
             self._log_audit_failure([msg])
             return False
 
-        # 3. LLM Audit
+        # 3. Bandit
+        try:
+            self.audit_tool.run(["-r", "src/", "-ll"])
+        except Exception as e:
+            msg = f"Security Check (Bandit) Failed: {e}"
+            logger.warning(msg)
+            self._log_audit_failure([msg])
+            return False
+
+        # 4. LLM Audit
         logger.info("Static checks passed. Proceeding to LLM Audit...")
 
         files_to_audit = self._get_filtered_files("src/")
