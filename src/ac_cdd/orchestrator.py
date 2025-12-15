@@ -63,6 +63,7 @@ class CycleOrchestrator:
     def execute_all(self, progress_task=None, progress_obj=None) -> None:
         """全フェーズを実行"""
         steps = [
+            ("Planning Phase", self.plan_cycle),
             ("Aligning Contracts", self.align_contracts),
             ("Generating Property Tests", self.generate_property_tests),
             ("Implementation Loop", self.run_implementation_loop),
@@ -76,6 +77,97 @@ class CycleOrchestrator:
             logger.info(f"Starting Phase: {name}")
             func()
             logger.info(f"Completed Phase: {name}")
+
+    def plan_cycle(self) -> None:
+        """
+        Phase 0: 計画策定 (Planning Phase)
+        JulesがALL_SPEC.mdとCYCLE_PLANNING_PROMPT.mdを読み込み、
+        自動的に実装計画 (SPEC.md, schema.py, UAT.md) を策定・配置する。
+        """
+        if self.dry_run:
+            logger.info("[DRY-RUN] Planning Cycle... (Mocking plan generation)")
+            return
+
+        # 1. Read Inputs
+        planning_prompt_path = Path(settings.paths.templates) / "CYCLE_PLANNING_PROMPT.md"
+        all_spec_path = self.documents_dir / "ALL_SPEC.md"
+
+        if not planning_prompt_path.exists():
+            raise FileNotFoundError(f"{planning_prompt_path} not found.")
+
+        # Note: ALL_SPEC.md might be missing if not initialized, but typically required for planning
+        if not all_spec_path.exists():
+            logger.warning(f"{all_spec_path} not found. Using default/empty context.")
+            all_spec_content = "(No ALL_SPEC.md provided)"
+        else:
+            all_spec_content = all_spec_path.read_text()
+
+        base_prompt = planning_prompt_path.read_text()
+
+        # 2. Construct Prompt
+        # Inject ALL_SPEC content into the placeholder or append it
+        user_task = base_prompt.replace("[PASTE YOUR ALL_SPEC.MD CONTENT HERE]", all_spec_content)
+        user_task += f"\n\nFocus specifically on generating artifacts for CYCLE{self.cycle_id}."
+
+        # Use 'architect' role
+        full_prompt = self._construct_prompt(settings.agents.architect, user_task)
+
+        # 3. Call Jules API
+        logger.info(f"Generating Plan for CYCLE{self.cycle_id}...")
+        # We expect Jules to output Markdown code blocks.
+        # Ideally, we should parse the output and save to files.
+        # For now, we'll ask Jules to output the content and we rely on the user/Jules to ensure
+        # the format is correct.
+        # But wait, the task implies AUTOMATION. So we should parse the response and write to:
+        # - dev_documents/CYCLE{id}/SPEC.md
+        # - dev_documents/CYCLE{id}/schema.py
+        # - dev_documents/CYCLE{id}/UAT.md
+
+        response_text = self.jules_client.start_task(
+            prompt=full_prompt,
+            session_name=f"Cycle{self.cycle_id}_Planning"
+        )
+
+        # 4. Parse and Save Artifacts
+        self._parse_and_save_plan(response_text)
+
+    def _parse_and_save_plan(self, response_text: str) -> None:
+        """
+        Parses the LLM response for code blocks and saves them to the cycle directory.
+        Expected format matches CYCLE_PLANNING_PROMPT.md output example.
+        """
+        self.cycle_dir.mkdir(parents=True, exist_ok=True)
+
+        # Simple parsing strategy: look for filenames in headers or text followed by code blocks
+        # or just regex for ```markdown ... ``` blocks?
+        # Given the prompt template asks for specific headers like:
+        # ### 1. `dev_documents/CYCLE01/SPEC.md`
+        # ```markdown ... ```
+        # We can try to regex extract based on file extensions or headers.
+
+        import re
+
+        # Pattern to find file path and content
+        # Matches: ### <number>. `path` \n ```<lang> \n <content> \n ```
+        # We'll be lenient with the path regex
+        pattern = re.compile(r"###\s*\d+\.\s*`([^`]+)`\s*\n\s*```(\w*)\n(.*?)```", re.DOTALL)
+
+        matches = pattern.findall(response_text)
+
+        if not matches:
+            logger.warning("No artifacts found. Saving full response to PLAN.md")
+            (self.cycle_dir / "PLAN.md").write_text(response_text)
+            return
+
+        for fpath_str, _lang, content in matches:
+            # Extract filename from path (ignoring directory provided by LLM if it differs)
+            # The prompt asks for dev_documents/CYCLE{id}/filename
+            # We want to force save to self.cycle_dir
+            fname = Path(fpath_str).name
+            target_path = self.cycle_dir / fname
+
+            target_path.write_text(content)
+            logger.info(f"Saved {target_path}")
 
     def _get_system_context(self) -> str:
         """
@@ -175,54 +267,116 @@ class CycleOrchestrator:
         Logic:
           1. Implement
           2. Refinement Loop (Test -> Audit -> Re-Audit)
+        Self-Healing:
+          If implementation fails after max retries, retry the Plan Phase.
         """
         logger.info("Starting Implementation Phase")
 
-        # 1. Initial Implementation
-        self._trigger_implementation()
+        # Outer loop for Self-Healing (Re-Planning)
+        max_plan_retries = 3
+        plan_attempt = 0
 
-        # 2. Refinement Loop
-        max_retries = settings.MAX_RETRIES
-        attempt = 0
-
-        logger.info("Entering Refinement Loop (Stable Audit Loop)")
-
-        while attempt < max_retries:
-            attempt += 1
-            logger.info(f"Refinement Loop: Iteration {attempt}/{max_retries}")
-
-            # 2.1 Test
-            logger.info("Running Tests...")
-            passed, logs = self._run_tests()
-
-            if not passed:
-                logger.warning("Tests Failed. Triggering fix...")
-                fix_prompt = (
-                    "Test Failed.\n"
-                    "Here is the captured log (last 2000 chars):\n"
-                    "--------------------------------------------------\n"
-                    f"{logs}\n"
-                    "--------------------------------------------------\n"
-                    "Please analyze the stack trace and fix the implementation in src/."
+        while plan_attempt < max_plan_retries:
+            plan_attempt += 1
+            if plan_attempt > 1:
+                logger.warning(
+                    f"Self-Healing: Re-planning cycle ({plan_attempt}/{max_plan_retries})..."
                 )
-                self._trigger_fix(fix_prompt)
-                continue # Back to Test
+                # Feedback loop: Ask Jules to revise the plan based on failure
+                # We use a specialized re-planning task with failure context.
 
-            # 2.2 Audit
-            logger.info("Tests Passed. Proceeding to Strict Audit...")
-            audit_result = self.run_strict_audit()
+                self._replan_cycle(
+                    "Implementation loop failed repeatedly. "
+                    "Please review SPEC/Schema/UAT and simplify or fix logic."
+                )
 
-            if audit_result is True:
-                logger.info("Audit Passed (Clean)!")
-                # Success: Test Pass AND Audit Pass sequentially
+            # 1. Initial Implementation
+            self._trigger_implementation()
+
+            # 2. Refinement Loop
+            max_retries = settings.MAX_RETRIES
+            attempt = 0
+
+            logger.info("Entering Refinement Loop (Stable Audit Loop)")
+
+            loop_success = False
+
+            while attempt < max_retries:
+                attempt += 1
+                logger.info(f"Refinement Loop: Iteration {attempt}/{max_retries}")
+
+                # 2.1 Test
+                logger.info("Running Tests...")
+                passed, logs = self._run_tests()
+
+                if not passed:
+                    logger.warning("Tests Failed. Triggering fix...")
+                    fix_prompt = (
+                        "Test Failed.\n"
+                        "Here is the captured log (last 2000 chars):\n"
+                        "--------------------------------------------------\n"
+                        f"{logs}\n"
+                        "--------------------------------------------------\n"
+                        "Please analyze the stack trace and fix the implementation in src/."
+                    )
+                    self._trigger_fix(fix_prompt)
+                    continue  # Back to Test
+
+                # 2.2 Audit
+                logger.info("Tests Passed. Proceeding to Strict Audit...")
+                audit_result = self.run_strict_audit()
+
+                if audit_result is True:
+                    logger.info("Audit Passed (Clean)!")
+                    # Success: Test Pass AND Audit Pass sequentially
+                    loop_success = True
+                    break
+                else:
+                    logger.warning("Audit Failed. Triggering fix...")
+                    # Note: Logic says "Fix -> Back to Test"
+                    self._trigger_fix(f"Audit failed. See {self.audit_log_path} for details.")
+                    continue  # Back to Test
+
+            if loop_success:
                 return
-            else:
-                logger.warning("Audit Failed. Triggering fix...")
-                # Note: Logic says "Fix -> Back to Test"
-                self._trigger_fix(f"Audit failed. See {self.audit_log_path} for details.")
-                continue # Back to Test
 
-        raise Exception("Max retries reached in Implementation/Audit Loop.")
+            # If we reach here, the inner loop failed (max retries)
+            logger.error("Implementation Loop Failed.")
+            # Continue to outer loop (Self-Healing)
+            # We will use 'failure_reason' for the re-plan prompt.
+
+        raise Exception(
+            f"Max retries reached in Self-Healing Plan Loop ({max_plan_retries} attempts)."
+        )
+
+    def _replan_cycle(self, feedback: str) -> None:
+        """
+        Re-runs planning with feedback.
+        """
+        logger.info("Triggering Re-Planning with feedback...")
+
+        # Similar to plan_cycle but with feedback
+        planning_prompt_path = Path(settings.paths.templates) / "CYCLE_PLANNING_PROMPT.md"
+        all_spec_path = self.documents_dir / "ALL_SPEC.md"
+
+        base_prompt = planning_prompt_path.read_text() if planning_prompt_path.exists() else ""
+        all_spec_content = all_spec_path.read_text() if all_spec_path.exists() else ""
+
+        user_task = base_prompt.replace("[PASTE YOUR ALL_SPEC.MD CONTENT HERE]", all_spec_content)
+        user_task += (
+            f"\n\nCRITICAL UPDATE: The previous plan failed during implementation.\n"
+            f"Feedback: {feedback}\n\n"
+            f"Please revise the SPEC, Schema, and UAT for CYCLE{self.cycle_id} "
+            "to be simpler or more robust."
+        )
+
+        full_prompt = self._construct_prompt(settings.agents.architect, user_task)
+
+        response_text = self.jules_client.start_task(
+            prompt=full_prompt,
+            session_name=f"Cycle{self.cycle_id}_RePlanning"
+        )
+        self._parse_and_save_plan(response_text)
 
     def _trigger_implementation(self) -> None:
         spec_path = f"{settings.paths.documents_dir}/CYCLE{self.cycle_id}/SPEC.md"
