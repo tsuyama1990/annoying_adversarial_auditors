@@ -18,6 +18,7 @@ def _detect_package_dir() -> str:
     # Fallback to standard conventions or strict default
     return "src/ac_cdd"
 
+
 class PathsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     documents_dir: str = "dev_documents"
@@ -39,6 +40,7 @@ class PathsConfig(BaseSettings):
             self.contracts_dir = f"{self.package_dir}/contracts"
         return self
 
+
 class ToolsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     jules_cmd: str = "jules"
@@ -49,6 +51,7 @@ class ToolsConfig(BaseSettings):
     gemini_cmd: str = "gemini"
     jules_base_url: str = "https://jules.googleapis.com/v1alpha"
 
+
 class AgentsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     architect: str = "DEFAULT_ARCHITECT_PROMPT"
@@ -57,9 +60,11 @@ class AgentsConfig(BaseSettings):
     auditor: str = "DEFAULT_AUDITOR_PROMPT"
     qa_analyst: str = "DEFAULT_QA_ANALYST_PROMPT"
 
+
 class PromptsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     property_test_template: str = "DEFAULT_TEST_PROMPT"
+
 
 class Settings(BaseSettings):
     MAX_RETRIES: int = 10
@@ -69,11 +74,7 @@ class Settings(BaseSettings):
     agents: AgentsConfig = AgentsConfig()
     prompts: PromptsConfig = PromptsConfig()
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @classmethod
     def load_from_toml(cls, toml_path: str = "ac_cdd.toml") -> "Settings":
@@ -100,5 +101,6 @@ class Settings(BaseSettings):
                 settings.prompts = PromptsConfig(**data["prompts"])
 
         return settings
+
 
 settings = Settings.load_from_toml()

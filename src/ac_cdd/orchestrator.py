@@ -87,15 +87,17 @@ class CycleOrchestrator:
         self, agent: object, prompt: str, task_name: str, result_type: object = str
     ) -> object:
         """
-        Runs an agent with rich UI streaming.
-        Adapts between simple run and stream depending on capability.
+        Runs an agent with rich UI streaming (Spinner).
         """
         model_name = getattr(agent, "model", "Unknown Model")
-        logger.info(f"Agent {model_name} thinking about {task_name}...")
+        console = Console()
 
-        # Fallback to standard run for now to ensure stability with structured outputs
-        # but print token usage if possible.
-        result = await agent.run(prompt, result_type=result_type)  # type: ignore
+        with console.status(
+            f"[bold green]Agent {model_name} is thinking about {task_name}...[/bold green]"
+        ):
+            # Fallback to standard run for now to ensure stability with structured outputs
+            # but print token usage if possible.
+            result = await agent.run(prompt, result_type=result_type)  # type: ignore
 
         # Mock usage display
         usage = getattr(result, "usage", None)
@@ -118,15 +120,14 @@ class CycleOrchestrator:
 
         base_prompt = planning_prompt_path.read_text(encoding="utf-8")
         user_task = (
-            f"{base_prompt}\n\n"
-            f"Focus specifically on generating artifacts for CYCLE{self.cycle_id}."
+            f"{base_prompt}\n\nFocus specifically on generating artifacts for CYCLE{self.cycle_id}."
         )
 
         logger.info(f"Generating Plan for CYCLE{self.cycle_id}...")
 
         # Run Pydantic AI Agent (mocked for now for streaming replacement later)
         result = await self._run_agent_with_ui(
-             planner_agent, user_task, "Planning Phase", result_type=CyclePlan
+            planner_agent, user_task, "Planning Phase", result_type=CyclePlan
         )
         plan: CyclePlan = result.output  # type: ignore
 
@@ -146,9 +147,7 @@ class CycleOrchestrator:
             logger.info(f"Saved {target_path}")
 
         # Save thought process
-        (self.cycle_dir / "PLAN_THOUGHTS.md").write_text(
-            plan.thought_process, encoding="utf-8"
-        )
+        (self.cycle_dir / "PLAN_THOUGHTS.md").write_text(plan.thought_process, encoding="utf-8")
 
     def align_contracts(self) -> None:
         """
@@ -202,14 +201,13 @@ class CycleOrchestrator:
         prompt_with_role = f"You are a QA Engineer.\n{user_task}"
 
         result = await self._run_agent_with_ui(
-             coder_agent,
-             prompt_with_role,
-             "Generating Property Tests",
-             result_type=list[FileOperation],
+            coder_agent,
+            prompt_with_role,
+            "Generating Property Tests",
+            result_type=list[FileOperation],
         )
         # Handle structured output
         self._apply_agent_changes(result.output)  # type: ignore
-
 
     async def run_implementation_loop(self) -> None:
         """
@@ -273,9 +271,7 @@ class CycleOrchestrator:
                     break
                 else:
                     logger.warning("Audit Failed. Triggering fix...")
-                    await self._trigger_fix(
-                        f"Audit failed. See {self.audit_log_path} for details."
-                    )
+                    await self._trigger_fix(f"Audit failed. See {self.audit_log_path} for details.")
                     continue
 
             if loop_success:
@@ -306,7 +302,7 @@ class CycleOrchestrator:
         )
 
         result = await self._run_agent_with_ui(
-             planner_agent, user_task, "Re-Planning Cycle", result_type=CyclePlan
+            planner_agent, user_task, "Re-Planning Cycle", result_type=CyclePlan
         )
         self._save_plan_artifacts(result.output)  # type: ignore
 
@@ -322,9 +318,49 @@ class CycleOrchestrator:
             return
 
         result = await self._run_agent_with_ui(
-             coder_agent, description, "Implementing Features", result_type=list[FileOperation]
+            coder_agent, description, "Implementing Features", result_type=list[FileOperation]
         )
         self._apply_agent_changes(result.output)  # type: ignore
+
+    def _fuzzy_find(self, content: str, block: str) -> tuple[int, int]:
+        """
+        Finds the block in content with fuzzy matching (ignoring whitespace).
+        Returns (start_index, end_index) or (-1, -1) if not found.
+        """
+        # 1. Exact match attempt
+        idx = content.find(block)
+        if idx != -1:
+            return idx, idx + len(block)
+
+        # 2. Normalized match attempt
+        # We will split into lines and match sequences of stripped lines
+        content_lines = content.splitlines(keepends=True)
+        block_lines = block.splitlines(keepends=True)
+
+        norm_content = [line.strip() for line in content_lines]
+        norm_block = [line.strip() for line in block_lines]
+
+        # Remove empty lines from search block for robustness?
+        # Requirement says "exact block ... including all whitespace"
+        # but fuzzy fallback implies looseness.
+        # Let's match stripped non-empty lines sequence.
+
+        # Simple sliding window on lines
+        n_block = len(norm_block)
+        n_content = len(norm_content)
+
+        if n_block == 0:
+            return -1, -1
+
+        for i in range(n_content - n_block + 1):
+            if norm_content[i : i + n_block] == norm_block:
+                # Found match in lines i to i + n_block
+                # Calculate char indices
+                start_char = sum(len(line) for line in content_lines[:i])
+                end_char = sum(len(line) for line in content_lines[: i + n_block])
+                return start_char, end_char
+
+        return -1, -1
 
     def _apply_agent_changes(self, changes: list[FileOperation]) -> None:
         """
@@ -347,20 +383,24 @@ class CycleOrchestrator:
                     # But if the file is truly new, p.read_text fails.
                     old_content_lines = p.read_text(encoding="utf-8").splitlines(keepends=True)
                 else:
-                     old_content_lines = []
+                    old_content_lines = []
 
                 new_content = op.content
                 new_content_lines = new_content.splitlines(keepends=True)
 
-                diff = list(difflib.unified_diff(
-                    old_content_lines, new_content_lines,
-                    fromfile=str(p), tofile=str(p),
-                    lineterm=""
-                ))
+                diff = list(
+                    difflib.unified_diff(
+                        old_content_lines,
+                        new_content_lines,
+                        fromfile=str(p),
+                        tofile=str(p),
+                        lineterm="",
+                    )
+                )
                 diff_text = "".join(diff)
                 if not diff_text and p.exists():
-                     logger.info(f"No changes for {p}")
-                     continue
+                    logger.info(f"No changes for {p}")
+                    continue
 
             elif isinstance(op, FilePatch):
                 if not p.exists():
@@ -369,8 +409,10 @@ class CycleOrchestrator:
 
                 original_content = p.read_text(encoding="utf-8")
 
-                # Verify search block
-                if op.search_block not in original_content:
+                # Use fuzzy finder
+                start_idx, end_idx = self._fuzzy_find(original_content, op.search_block)
+
+                if start_idx == -1:
                     logger.error(
                         f"Patch failed for {p}: search_block not found in file "
                         "(Exact match required)."
@@ -379,17 +421,24 @@ class CycleOrchestrator:
                     # Requirement says "fail error log and skip".
                     continue
 
-                new_content = original_content.replace(op.search_block, op.replace_block, 1)
+                # Replace content
+                new_content = (
+                    original_content[:start_idx] + op.replace_block + original_content[end_idx:]
+                )
 
                 # Generate Diff for the whole file
                 old_content_lines = original_content.splitlines(keepends=True)
                 new_content_lines = new_content.splitlines(keepends=True)
 
-                diff = list(difflib.unified_diff(
-                    old_content_lines, new_content_lines,
-                    fromfile=str(p), tofile=str(p),
-                    lineterm=""
-                ))
+                diff = list(
+                    difflib.unified_diff(
+                        old_content_lines,
+                        new_content_lines,
+                        fromfile=str(p),
+                        tofile=str(p),
+                        lineterm="",
+                    )
+                )
                 diff_text = "".join(diff)
 
             # Interactive Review
@@ -422,7 +471,7 @@ class CycleOrchestrator:
             return
 
         result = await self._run_agent_with_ui(
-             coder_agent, instructions, "Fixing Code", result_type=list[FileOperation]
+            coder_agent, instructions, "Fixing Code", result_type=list[FileOperation]
         )
         self._apply_agent_changes(result.output)  # type: ignore
 
@@ -441,9 +490,7 @@ class CycleOrchestrator:
         try:
             # Run in thread/subprocess async
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await proc.communicate()
 
@@ -479,7 +526,7 @@ class CycleOrchestrator:
 
         # 2. Mypy
         try:
-            self.mypy.run(["src/"])
+            await self.mypy.run(["src/"])
         except Exception as e:
             msg = f"Type Check (Mypy) Failed: {e}"
             logger.warning(msg)
@@ -488,7 +535,7 @@ class CycleOrchestrator:
 
         # 3. Bandit
         try:
-            self.audit_tool.run(["-r", "src/", "-ll"])
+            await self.audit_tool.run(["-r", "src/", "-ll"])
         except Exception as e:
             msg = f"Security Check (Bandit) Failed: {e}"
             logger.warning(msg)
@@ -515,24 +562,20 @@ class CycleOrchestrator:
 
         # Run Auditor Agent
         result = await self._run_agent_with_ui(
-             auditor_agent, user_task, "Auditing Code", result_type=AuditResult
+            auditor_agent, user_task, "Auditing Code", result_type=AuditResult
         )
         audit_result: AuditResult = result.output  # type: ignore
 
         if audit_result.is_approved:
             return True
         else:
-            self._log_audit_failure(
-                audit_result.critical_issues + audit_result.suggestions
-            )
+            self._log_audit_failure(audit_result.critical_issues + audit_result.suggestions)
             return False
 
     async def _run_subprocess(self, cmd: list[str]) -> None:
         try:
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             await proc.communicate()
         except Exception as e:
@@ -540,6 +583,7 @@ class CycleOrchestrator:
 
     def _get_filtered_files(self, directory: str) -> list[str]:
         import fnmatch
+
         ignored_patterns = {"__pycache__", ".git", ".env", ".DS_Store", "*.pyc"}
 
         auditignore_path = Path(".auditignore")
@@ -572,6 +616,7 @@ class CycleOrchestrator:
 
     def _log_audit_failure(self, comments: list[str]) -> None:
         import time
+
         with open(self.audit_log_path, "a", encoding="utf-8") as f:
             f.write(f"\n## Audit Failed at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             for c in comments:
@@ -598,7 +643,7 @@ class CycleOrchestrator:
 
         # coder_agent is typed to return list[FileChange]
         result = await self._run_agent_with_ui(
-             coder_agent, description, "Generating UAT", result_type=list[FileOperation]
+            coder_agent, description, "Generating UAT", result_type=list[FileOperation]
         )
         self._apply_agent_changes(result.output)  # type: ignore
 
@@ -614,9 +659,7 @@ class CycleOrchestrator:
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await proc.communicate()
             logs = stdout.decode() + "\n" + stderr.decode()
@@ -648,7 +691,7 @@ class CycleOrchestrator:
         )
 
         result = await self._run_agent_with_ui(
-             qa_analyst_agent, user_task, "Analyzing UAT Results", result_type=UatAnalysis
+            qa_analyst_agent, user_task, "Analyzing UAT Results", result_type=UatAnalysis
         )
         analysis: UatAnalysis = result.output  # type: ignore
 
@@ -660,7 +703,7 @@ class CycleOrchestrator:
 
         logger.info(f"UAT Report saved to {report_path}")
 
-    def finalize_cycle(self) -> None:
+    async def finalize_cycle(self) -> None:
         """
         Phase 4: 自動マージ
         """
@@ -668,7 +711,7 @@ class CycleOrchestrator:
             logger.info("[DRY-RUN] Merging PR via gh CLI...")
         else:
             args = ["pr", "merge", "--squash", "--delete-branch", "--admin"]
-            self.gh.run(args)
+            await self.gh.run(args)
 
         if self.auto_next:
             # Note: prepare_next_cycle should be scheduled or handled by caller if async

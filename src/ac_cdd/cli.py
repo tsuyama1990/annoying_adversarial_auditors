@@ -24,6 +24,7 @@ if os.getenv("LOGFIRE_TOKEN"):
 app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Development Orchestrator")
 console = Console()
 
+
 @app.command()
 def init() -> None:
     """プロジェクトの初期化と依存関係チェック"""
@@ -68,8 +69,8 @@ def init() -> None:
                 f.write(env_content)
             console.print("[green]✔ .env を作成しました。[/green]")
         else:
-             console.print("[red]✖ .env.example が見つかりません。[/red]")
-             all_pass = False
+            console.print("[red]✖ .env.example が見つかりません。[/red]")
+            all_pass = False
     else:
         console.print("[green]✔ .env ファイルを確認しました。[/green]")
 
@@ -81,7 +82,9 @@ def init() -> None:
         )
         raise typer.Exit(code=1)
 
+
 # --- Cycle Workflow ---
+
 
 @app.command(name="new-cycle")
 def new_cycle(name: str) -> None:
@@ -105,6 +108,7 @@ def new_cycle(name: str) -> None:
     console.print(f"[green]新しいサイクルを作成しました: CYCLE{cycle_id}[/green]")
     console.print(f"[bold]{base_path}[/bold] 内のファイルを編集してください。")
 
+
 @app.command(name="start-cycle")
 def start_cycle(
     names: list[str],
@@ -115,6 +119,7 @@ def start_cycle(
 ) -> None:
     """サイクルの自動実装・監査ループを開始します (複数ID指定可)"""
     asyncio.run(_start_cycle_async(names, dry_run, auto_next, yes, interactive))
+
 
 async def _start_cycle_async(
     names: list[str], dry_run: bool, auto_next: bool, auto_approve: bool, interactive: bool
@@ -135,13 +140,11 @@ async def _start_cycle_async(
             dry_run=dry_run,
             auto_next=auto_next,
             auto_approve=auto_approve,
-            interactive=interactive
+            interactive=interactive,
         )
 
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
         ) as progress:
             task = progress.add_task(f"[cyan]Cycle {cycle_id} 実行中...", total=None)
 
@@ -154,7 +157,9 @@ async def _start_cycle_async(
                 console.print(Panel(f"サイクル {cycle_id} 失敗: {str(e)}", style="bold red"))
                 raise typer.Exit(code=1) from e
 
+
 # --- Ad-hoc Workflow ---
+
 
 @app.command()
 def audit(repo: str = typer.Option(None, help="Target repository")) -> None:
@@ -163,13 +168,12 @@ def audit(repo: str = typer.Option(None, help="Target repository")) -> None:
     """
     asyncio.run(_audit_async(repo))
 
+
 async def _audit_async(repo: str) -> None:
     typer.echo("🔍 Fetching git diff...")
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "diff", "HEAD",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            "git", "diff", "HEAD", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
         diff_output = stdout.decode()
@@ -215,7 +219,6 @@ async def _audit_async(repo: str) -> None:
         orchestrator = CycleOrchestrator("00", dry_run=False)  # Dummy cycle ID
         orchestrator._apply_agent_changes(changes)
 
-
     except Exception as e:
         typer.secho(str(e), fg=typer.colors.RED)
         raise typer.Exit(1) from e
@@ -229,6 +232,7 @@ def fix() -> None:
     """
     asyncio.run(_fix_async())
 
+
 async def _fix_async() -> None:
     uv_path = shutil.which("uv")
     if not uv_path:
@@ -238,9 +242,12 @@ async def _fix_async() -> None:
     # 1. Try running only failed tests first
     typer.echo("🧪 Running failed tests (pytest --last-failed)...")
     proc = await asyncio.create_subprocess_exec(
-        uv_path, "run", "pytest", "--last-failed",
+        uv_path,
+        "run",
+        "pytest",
+        "--last-failed",
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate()
     logs = stdout.decode() + "\n" + stderr.decode()
@@ -249,9 +256,7 @@ async def _fix_async() -> None:
         # 2. If no failures (or no history), run full suite
         typer.echo("✨ Last failed tests passed (or none). Running full suite...")
         proc_full = await asyncio.create_subprocess_exec(
-            uv_path, "run", "pytest",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            uv_path, "run", "pytest", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout_full, stderr_full = await proc_full.communicate()
         logs_full = stdout_full.decode() + "\n" + stderr_full.decode()
@@ -268,8 +273,7 @@ async def _fix_async() -> None:
 
     try:
         prompt = (
-            f"Tests failed. Analyze the logs and fix the code in src/.\n\n"
-            f"Logs:\n{logs[-2000:]}"
+            f"Tests failed. Analyze the logs and fix the code in src/.\n\nLogs:\n{logs[-2000:]}"
         )
         result = await coder_agent.run(prompt)
         typer.secho("✅ Fix task assigned to Coder.", fg=typer.colors.GREEN)
@@ -284,6 +288,7 @@ async def _fix_async() -> None:
         typer.secho(str(e), fg=typer.colors.RED)
         raise typer.Exit(1) from e
 
+
 @app.command()
 def doctor() -> None:
     """環境チェック"""
@@ -293,7 +298,7 @@ def doctor() -> None:
         "git": "Install Git from https://git-scm.com/",
         "uv": "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh",
         "gh": "Install GitHub CLI: https://cli.github.com/",
-        "bandit": "Install bandit (via pip/uv)"
+        "bandit": "Install bandit (via pip/uv)",
     }
 
     all_ok = True
@@ -314,6 +319,7 @@ def doctor() -> None:
         typer.secho("\n⚠️  Please install missing tools to proceed.", fg=typer.colors.YELLOW)
         raise typer.Exit(1)
 
+
 def friendly_error_handler() -> None:
     try:
         app()
@@ -322,10 +328,11 @@ def friendly_error_handler() -> None:
         if settings.debug:  # Assuming Settings has debug or check env
             console.print_exception()
         elif os.getenv("DEBUG"):
-             console.print_exception()
+            console.print_exception()
         else:
             console.print("Run with DEBUG=1 environment variable to see full traceback.")
         raise typer.Exit(code=1) from e
+
 
 if __name__ == "__main__":
     friendly_error_handler()
