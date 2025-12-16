@@ -84,26 +84,26 @@ class SandboxConfig(BaseSettings):
 class AgentsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     architect: str = Field(
-        default_factory=lambda: _read_prompt("architect.txt", "DEFAULT_ARCHITECT_PROMPT")
+        default_factory=lambda: _read_prompt("architect.md", "DEFAULT_ARCHITECT_PROMPT")
     )
     coder: str = Field(
-        default_factory=lambda: _read_prompt("coder.txt", "DEFAULT_CODER_PROMPT")
+        default_factory=lambda: _read_prompt("coder.md", "DEFAULT_CODER_PROMPT")
     )
     tester: str = Field(
-        default_factory=lambda: _read_prompt("tester.txt", "DEFAULT_TESTER_PROMPT")
+        default_factory=lambda: _read_prompt("tester.md", "DEFAULT_TESTER_PROMPT")
     )
     auditor: str = Field(
-        default_factory=lambda: _read_prompt("auditor.txt", "DEFAULT_AUDITOR_PROMPT")
+        default_factory=lambda: _read_prompt("auditor.md", "DEFAULT_AUDITOR_PROMPT")
     )
     qa_analyst: str = Field(
-        default_factory=lambda: _read_prompt("qa_analyst.txt", "DEFAULT_QA_ANALYST_PROMPT")
+        default_factory=lambda: _read_prompt("qa_analyst.md", "DEFAULT_QA_ANALYST_PROMPT")
     )
 
 
 class PromptsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     property_test_template: str = Field(
-        default_factory=lambda: _read_prompt("property_test_template.txt", "DEFAULT_TEST_PROMPT")
+        default_factory=lambda: _read_prompt("property_test_template.md", "DEFAULT_TEST_PROMPT")
     )
 
 
