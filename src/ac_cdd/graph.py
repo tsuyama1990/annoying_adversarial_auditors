@@ -229,27 +229,46 @@ async def auditor_node(state: CycleState) -> dict:
     if code != 0:
         errors.append(f"Bandit Failed:\n{out}\n{err}")
 
-    if errors:
-        return {
-            "audit_logs": "\n".join(errors),
-            "error": "\n".join(errors),
-            "audit_result": AuditResult(is_approved=False, critical_issues=errors),
-            "current_phase": "audit_failed",
-        }
-
-    # 2. LLM Audit (runs locally on source files)
-    user_task = f"Audit the code in {settings.paths.src}/ for Pydantic contracts and security."
+    # 2. LLM Audit
+    # We invoke the agent regardless of static analysis result to allow
+    # "Smart Suppression" suggestions for static analysis errors.
 
     files_content = file_patcher.read_src_files(settings.paths.src)
+
+    user_task = f"Audit the code in {settings.paths.src}/ for Pydantic contracts and security."
+
+    if errors:
+        user_task += (
+            "\n\nSTATIC ANALYSIS FAILED:\n" + "\n".join(errors) +
+            "\n\nIf these are false positives, suggest suppression comments."
+        )
+
     prompt = f"{user_task}\n\n{files_content}"
 
     result = await auditor_agent.run(prompt)
     audit_res: AuditResult = result.output
 
     if not audit_res.is_approved:
+        # Combine static errors with LLM feedback
+        combined_issues = errors + audit_res.critical_issues
+        err_msg = "Audit Failed:\n" + "\n".join(combined_issues)
+
         return {
+            "audit_logs": "\n".join(errors),
             "audit_result": audit_res,
-            "error": "Audit Failed: " + "; ".join(audit_res.critical_issues),
+            "error": err_msg,
+            "current_phase": "audit_failed",
+        }
+
+    # If approved by LLM despite static errors, we might still fail if errors exist.
+    # The LLM *should* have returned approved=False with suggestions to suppress.
+    # If errors exist, we must return audit_failed so Coder can apply fixes/suppressions.
+
+    if errors:
+         return {
+            "audit_logs": "\n".join(errors),
+            "audit_result": audit_res,
+            "error": "Static Analysis Failed. See Audit Result for suppression advice.",
             "current_phase": "audit_failed",
         }
 
