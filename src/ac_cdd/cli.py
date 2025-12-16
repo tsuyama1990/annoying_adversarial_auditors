@@ -12,10 +12,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ac_cdd.config import settings
-from ac_cdd.domain_models import AuditResult, FileOperation
-from ac_cdd.graph import build_graph
-from ac_cdd.orchestrator import CycleOrchestrator  # Kept for ad-hoc commands reusing logic
-from ac_cdd.process_runner import ProcessRunner
+from ac_cdd.graph import build_audit_graph, build_fix_graph, build_graph
 
 load_dotenv()
 
@@ -123,6 +120,37 @@ def start_cycle(
     asyncio.run(_start_cycle_async(names, dry_run, auto_next, yes, interactive))
 
 
+async def _run_graph(graph_builder, initial_state: dict, title: str) -> None:
+    """Generic graph runner with progress UI."""
+    memory = MemorySaver()
+    graph = graph_builder.compile(checkpointer=memory)
+
+    config = {"configurable": {"thread_id": f"session-{initial_state.get('cycle_id', 'adhoc')}"}}
+
+    console.print(Panel(f"Running: {title}", style="bold magenta"))
+
+    with Progress(
+        SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
+    ) as progress:
+        task_id = progress.add_task("[cyan]Executing...[/cyan]", total=None)
+
+        try:
+            async for event in graph.astream(initial_state, config=config):
+                for node_name, state_update in event.items():
+                    phase = state_update.get("current_phase", node_name)
+                    progress.update(
+                        task_id, description=f"[cyan]Node: {node_name} ({phase})..."
+                    )
+                    if state_update.get("error"):
+                        err_msg = state_update["error"][:200]
+                        console.print(f"[red]Error in {node_name}:[/red] {err_msg}...")
+
+            console.print(Panel("完了しました！", style="bold green"))
+        except Exception as e:
+            console.print(Panel(f"失敗: {str(e)}", style="bold red"))
+            # raise typer.Exit(code=1) from e
+
+
 async def _start_cycle_async(
     names: list[str], dry_run: bool, auto_next: bool, auto_approve: bool, interactive: bool
 ) -> None:
@@ -130,136 +158,46 @@ async def _start_cycle_async(
         console.print("[red]少なくとも1つのサイクルIDを指定してください (例: 01)[/red]")
         raise typer.Exit(code=1)
 
-    # Run RAG Indexing if not dry-run (or even if dry-run to test it?)
-    # Let's run it unless dry-run, or maybe just log in dry run.
-    # Instruction says: "Automatically run CodeIndexer.index() at start of cycle".
-    # Implementation:
     if not dry_run:
         try:
             from ac_cdd.rag.indexer import CodeIndexer
-
             console.print("[cyan]Indexing codebase for RAG...[/cyan]")
-            indexer = CodeIndexer()
-            indexer.index()
+            CodeIndexer().index()
             console.print("[green]Index updated.[/green]")
         except Exception as e:
             console.print(f"[yellow]Warning: Indexing failed: {e}[/yellow]")
 
-    if dry_run:
-        console.print(
-            "[yellow][DRY-RUN] Graph execution does not fully support dry-run yet.[/yellow]"
-        )
-
-    # Build Graph
-    graph_builder = build_graph()
-    memory = MemorySaver()
-    graph = graph_builder.compile(checkpointer=memory)
-
     for cycle_id in names:
-        console.print(Panel(f"サイクル {cycle_id} のGraph実行を開始します", style="bold magenta"))
-
-        config = {"configurable": {"thread_id": f"cycle-{cycle_id}"}}
         initial_state = {
             "cycle_id": cycle_id,
             "loop_count": 0,
-            "code_changes": [],
-            "test_logs": "",
-            "audit_logs": "",
             "current_phase": "start",
             "error": None,
             "sandbox_id": None,
         }
-
-        with Progress(
-            SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
-        ) as progress:
-            task_id = progress.add_task(f"[cyan]Executing Graph for {cycle_id}...", total=None)
-
-            try:
-                # Stream the graph execution
-                async for event in graph.astream(initial_state, config=config):
-                    for node_name, state_update in event.items():
-                        phase = state_update.get("current_phase", node_name)
-                        progress.update(
-                            task_id, description=f"[cyan]Node: {node_name} ({phase})..."
-                        )
-
-                        # Handle errors if needed or just log
-                        if state_update.get("error"):
-                            err_msg = state_update["error"][:200]
-                            console.print(f"[red]Error in {node_name}:[/red] {err_msg}...")
-
-                console.print(Panel(f"サイクル {cycle_id} が完了しました！", style="bold green"))
-            except Exception as e:
-                console.print(Panel(f"サイクル {cycle_id} 失敗: {str(e)}", style="bold red"))
-                # We do not re-raise to allow next cycle to try if multiple
-                # raise typer.Exit(code=1) from e
+        await _run_graph(build_graph(), initial_state, f"Cycle {cycle_id}")
 
 
-# --- Ad-hoc Workflow (Legacy/Hybrid) ---
+# --- Ad-hoc Workflow (Graph Based) ---
 
 
 @app.command()
-def audit(repo: str = typer.Option(None, help="Target repository")) -> None:
+def audit(repo: str = typer.Option(None, help="Target repository (ignored, uses current)")) -> None:
     """
     [Strict Review] Gitの差分をAuditorに激辛レビューさせ、Coderに修正指示を出します。
     """
-    asyncio.run(_audit_async(repo))
+    asyncio.run(_audit_async())
 
 
-async def _audit_async(repo: str) -> None:
-    # Lazy import
-    from ac_cdd.agents import auditor_agent, coder_agent
-
-    typer.echo("🔍 Fetching git diff...")
-    runner = ProcessRunner()
-
-    try:
-        stdout, stderr, returncode = await runner.run_command(["git", "diff", "HEAD"], check=False)
-
-        if returncode != 0:
-            if stderr:
-                typer.secho(f"Git Error: {stderr}", fg=typer.colors.RED)
-                raise typer.Exit(1)
-
-        diff_output = stdout
-
-        if not diff_output:
-            typer.secho("No changes detected to audit.", fg=typer.colors.YELLOW)
-            return
-
-        typer.echo("🧠 Auditor is thinking (Strict Review Mode)...")
-        prompt = (
-            "Review the following git diff focusing on Security, "
-            "Performance, and Readability.\n"
-            "Output ONLY specific, actionable instructions for an AI coder "
-            "as a bulleted list.\n\n"
-            f"Git Diff:\n{diff_output}"
-        )
-
-        result_typed = await auditor_agent.run(prompt, result_type=AuditResult)
-
-        data: AuditResult = result_typed.output
-        review_instruction = data.critical_issues + data.suggestions
-
-        review_text = "\n".join(review_instruction)
-
-        typer.echo("🤖 Coder is taking over...")
-
-        coder_prompt = f"Here are the audit findings. Please fix the code.\n\n{review_text}"
-        coder_result = await coder_agent.run(coder_prompt)
-
-        typer.secho("✅ Audit complete. Fix task assigned to Coder!", fg=typer.colors.GREEN)
-
-        changes: list[FileOperation] = coder_result.output
-
-        orchestrator = CycleOrchestrator(settings.DUMMY_CYCLE_ID, dry_run=False)
-        orchestrator = CycleOrchestrator(settings.DUMMY_CYCLE_ID, dry_run=False)
-        orchestrator._apply_agent_changes(changes)
-
-    except Exception as e:
-        typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit(1) from e
+async def _audit_async() -> None:
+    initial_state = {
+        "cycle_id": "audit",
+        "loop_count": 0,
+        "current_phase": "audit_start",
+        "error": None,
+        "sandbox_id": None,
+    }
+    await _run_graph(build_audit_graph(), initial_state, "Ad-hoc Audit")
 
 
 @app.command()
@@ -271,52 +209,14 @@ def fix() -> None:
 
 
 async def _fix_async() -> None:
-    # Lazy import
-    from ac_cdd.agents import coder_agent
-
-    uv_path = shutil.which("uv")
-    if not uv_path:
-        typer.secho("Error: 'uv' not found.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
-    runner = ProcessRunner()
-
-    typer.echo("🧪 Running failed tests (pytest --last-failed)...")
-
-    stdout, stderr, returncode = await runner.run_command(
-        [uv_path, "run", "pytest", "--last-failed"], check=False
-    )
-    logs = stdout + "\n" + stderr
-
-    if returncode == 0:
-        typer.echo("✨ Last failed tests passed (or none). Running full suite...")
-        stdout_full, stderr_full, returncode_full = await runner.run_command(
-            [uv_path, "run", "pytest"], check=False
-        )
-        logs_full = stdout_full + "\n" + stderr_full
-
-        if returncode_full == 0:
-            typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
-            return
-        logs = logs_full
-
-    typer.secho("💥 Tests failed! Invoking Coder for repairs...", fg=typer.colors.RED)
-
-    try:
-        prompt = (
-            f"Tests failed. Analyze the logs and fix the code in src/.\n\nLogs:\n{logs[-2000:]}"
-        )
-        result = await coder_agent.run(prompt)
-        typer.secho("✅ Fix task assigned to Coder.", fg=typer.colors.GREEN)
-
-        changes: list[FileOperation] = result.output
-
-        orchestrator = CycleOrchestrator("00", dry_run=False)
-        orchestrator._apply_agent_changes(changes)
-
-    except Exception as e:
-        typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit(1) from e
+    initial_state = {
+        "cycle_id": "fix",
+        "loop_count": 0,
+        "current_phase": "fix_start",
+        "error": None,
+        "sandbox_id": None,
+    }
+    await _run_graph(build_fix_graph(), initial_state, "Ad-hoc Fix")
 
 
 @app.command()

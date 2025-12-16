@@ -19,6 +19,13 @@ def _detect_package_dir() -> str:
     return "src/ac_cdd"
 
 
+def _read_prompt(filename: str, default: str) -> str:
+    p = Path("src/ac_cdd/prompts") / filename
+    if p.exists():
+        return p.read_text(encoding="utf-8").strip()
+    return default
+
+
 class PathsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
     documents_dir: str = "dev_documents"
@@ -76,16 +83,28 @@ class SandboxConfig(BaseSettings):
 
 class AgentsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
-    architect: str = "DEFAULT_ARCHITECT_PROMPT"
-    coder: str = "DEFAULT_CODER_PROMPT"
-    tester: str = "DEFAULT_TESTER_PROMPT"
-    auditor: str = "DEFAULT_AUDITOR_PROMPT"
-    qa_analyst: str = "DEFAULT_QA_ANALYST_PROMPT"
+    architect: str = Field(
+        default_factory=lambda: _read_prompt("architect.txt", "DEFAULT_ARCHITECT_PROMPT")
+    )
+    coder: str = Field(
+        default_factory=lambda: _read_prompt("coder.txt", "DEFAULT_CODER_PROMPT")
+    )
+    tester: str = Field(
+        default_factory=lambda: _read_prompt("tester.txt", "DEFAULT_TESTER_PROMPT")
+    )
+    auditor: str = Field(
+        default_factory=lambda: _read_prompt("auditor.txt", "DEFAULT_AUDITOR_PROMPT")
+    )
+    qa_analyst: str = Field(
+        default_factory=lambda: _read_prompt("qa_analyst.txt", "DEFAULT_QA_ANALYST_PROMPT")
+    )
 
 
 class PromptsConfig(BaseSettings):
     model_config = ConfigDict(extra="ignore")
-    property_test_template: str = "DEFAULT_TEST_PROMPT"
+    property_test_template: str = Field(
+        default_factory=lambda: _read_prompt("property_test_template.txt", "DEFAULT_TEST_PROMPT")
+    )
 
 
 class Settings(BaseSettings):
@@ -121,6 +140,8 @@ class Settings(BaseSettings):
                 settings.tools = ToolsConfig(**data["tools"])
             if "sandbox" in data:
                 settings.sandbox = SandboxConfig(**data["sandbox"])
+            # Note: agents and prompts are now loaded from files by default,
+            # but we allow overriding from TOML if specified explicitly (though deprecated)
             if "agents" in data:
                 settings.agents = AgentsConfig(**data["agents"])
             if "prompts" in data:

@@ -17,3 +17,5 @@ class CycleState(TypedDict):
     current_phase: str
     loop_count: int
     error: str | None
+    dry_run: bool
+    interactive: bool
