@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 from ac_cdd.cli import app
 
 if __name__ == "__main__":

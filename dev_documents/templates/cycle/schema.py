@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 # 契約（Contract）定義
 # このファイルがこのサイクルの「正解」となります。
@@ -10,10 +11,10 @@ class CycleInput(BaseModel):
     model_config = ConfigDict(extra='forbid') # 厳格モード: 定義されていないフィールドは禁止
 
     request_id: str = Field(..., description="リクエストID")
-    payload: Dict[str, Any] = Field(default_factory=dict, description="処理対象データ")
+    payload: dict[str, Any] = Field(default_factory=dict, description="処理対象データ")
 
 class CycleOutput(BaseModel):
     """出力データの仕様"""
     success: bool = Field(..., description="処理成功フラグ")
-    data: Optional[Dict[str, Any]] = Field(None, description="結果データ")
-    error_message: Optional[str] = Field(None, description="エラー時のメッセージ")
+    data: dict[str, Any] | None = Field(None, description="結果データ")
+    error_message: str | None = Field(None, description="エラー時のメッセージ")

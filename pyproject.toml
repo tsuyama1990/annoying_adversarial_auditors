@@ -17,6 +17,9 @@ dependencies = [
     "pydantic-ai>=0.0.18",
     "logfire>=2.0.0",
     "devtools",
+    "langgraph>=1.0.5",
+    "e2b-code-interpreter>=2.4.1",
+    "textual>=6.10.0",
 ]
 
 [dependency-groups]

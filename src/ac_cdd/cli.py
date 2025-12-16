@@ -6,13 +6,15 @@ from pathlib import Path
 import logfire
 import typer
 from dotenv import load_dotenv
+from langgraph.checkpoint.memory import MemorySaver
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ac_cdd.config import settings
 from ac_cdd.domain_models import AuditResult, FileOperation
-from ac_cdd.orchestrator import CycleOrchestrator
+from ac_cdd.graph import build_graph
+from ac_cdd.orchestrator import CycleOrchestrator  # Kept for ad-hoc commands reusing logic
 from ac_cdd.process_runner import ProcessRunner
 
 load_dotenv()
@@ -83,7 +85,7 @@ def init() -> None:
         raise typer.Exit(code=1)
 
 
-# --- Cycle Workflow ---
+# --- Cycle Workflow (Graph Based) ---
 
 
 @app.command(name="new-cycle")
@@ -117,49 +119,69 @@ def start_cycle(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
     interactive: bool = typer.Option(True, help="Enable interactive approval of file changes"),
 ) -> None:
-    """サイクルの自動実装・監査ループを開始します (複数ID指定可)"""
+    """サイクルの自動実装・監査ループを開始します (LangGraph使用)"""
     asyncio.run(_start_cycle_async(names, dry_run, auto_next, yes, interactive))
 
 
 async def _start_cycle_async(
     names: list[str], dry_run: bool, auto_next: bool, auto_approve: bool, interactive: bool
 ) -> None:
-    # Lazy import to avoid crash if API key is missing during init/doctor
     if not names:
         console.print("[red]少なくとも1つのサイクルIDを指定してください (例: 01)[/red]")
         raise typer.Exit(code=1)
 
-    for cycle_id in names:
-        console.print(Panel(f"サイクル {cycle_id} の自動化を開始します", style="bold magenta"))
-        if dry_run:
-            console.print(
-                "[yellow][DRY-RUN MODE] 実際のAPI呼び出しやコミットは行われません。[/yellow]"
-            )
-
-        orchestrator = CycleOrchestrator(
-            cycle_id,
-            dry_run=dry_run,
-            auto_next=auto_next,
-            auto_approve=auto_approve,
-            interactive=interactive,
+    if dry_run:
+        console.print(
+            "[yellow][DRY-RUN] Graph execution does not fully support dry-run yet.[/yellow]"
         )
+
+    # Build Graph
+    graph_builder = build_graph()
+    memory = MemorySaver()
+    graph = graph_builder.compile(checkpointer=memory)
+
+    for cycle_id in names:
+        console.print(Panel(f"サイクル {cycle_id} のGraph実行を開始します", style="bold magenta"))
+
+        config = {"configurable": {"thread_id": f"cycle-{cycle_id}"}}
+        initial_state = {
+            "cycle_id": cycle_id,
+            "loop_count": 0,
+            "code_changes": [],
+            "test_logs": "",
+            "audit_logs": "",
+            "current_phase": "start",
+            "error": None,
+            "sandbox_id": None
+        }
 
         with Progress(
             SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console
         ) as progress:
-            task = progress.add_task(f"[cyan]Cycle {cycle_id} 実行中...", total=None)
+            task_id = progress.add_task(f"[cyan]Executing Graph for {cycle_id}...", total=None)
 
             try:
-                await orchestrator.execute_all(progress_task=task, progress_obj=progress)
-                console.print(
-                    Panel(f"サイクル {cycle_id} が正常に完了しました！", style="bold green")
-                )
+                # Stream the graph execution
+                async for event in graph.astream(initial_state, config=config):
+                    for node_name, state_update in event.items():
+                        phase = state_update.get("current_phase", node_name)
+                        progress.update(
+                            task_id, description=f"[cyan]Node: {node_name} ({phase})..."
+                        )
+
+                        # Handle errors if needed or just log
+                        if state_update.get("error"):
+                            err_msg = state_update["error"][:200]
+                            console.print(f"[red]Error in {node_name}:[/red] {err_msg}...")
+
+                console.print(Panel(f"サイクル {cycle_id} が完了しました！", style="bold green"))
             except Exception as e:
                 console.print(Panel(f"サイクル {cycle_id} 失敗: {str(e)}", style="bold red"))
-                raise typer.Exit(code=1) from e
+                # We do not re-raise to allow next cycle to try if multiple
+                # raise typer.Exit(code=1) from e
 
 
-# --- Ad-hoc Workflow ---
+# --- Ad-hoc Workflow (Legacy/Hybrid) ---
 
 
 @app.command()
@@ -181,7 +203,6 @@ async def _audit_async(repo: str) -> None:
         stdout, stderr, returncode = await runner.run_command(["git", "diff", "HEAD"], check=False)
 
         if returncode != 0:
-            # If stderr is present, it might be an error.
             if stderr:
                 typer.secho(f"Git Error: {stderr}", fg=typer.colors.RED)
                 raise typer.Exit(1)
@@ -201,7 +222,6 @@ async def _audit_async(repo: str) -> None:
             f"Git Diff:\n{diff_output}"
         )
 
-        # We enforce structured output even for ad-hoc audit
         result_typed = await auditor_agent.run(prompt, result_type=AuditResult)
 
         data: AuditResult = result_typed.output
@@ -216,11 +236,9 @@ async def _audit_async(repo: str) -> None:
 
         typer.secho("✅ Audit complete. Fix task assigned to Coder!", fg=typer.colors.GREEN)
 
-        # Changes are now list[FileOperation]
         changes: list[FileOperation] = coder_result.output
 
-        # Instantiate orchestrator for file application logic (reuse reuse!)
-        orchestrator = CycleOrchestrator("00", dry_run=False)  # Dummy cycle ID
+        orchestrator = CycleOrchestrator("00", dry_run=False)
         orchestrator._apply_agent_changes(changes)
 
     except Exception as e:
@@ -232,7 +250,6 @@ async def _audit_async(repo: str) -> None:
 def fix() -> None:
     """
     [Auto Fix] テストを実行し、失敗した場合にCoderに修正させます。
-    Smart Fix: pytest --last-failed -> pytest full -> Coder
     """
     asyncio.run(_fix_async())
 
@@ -248,7 +265,6 @@ async def _fix_async() -> None:
 
     runner = ProcessRunner()
 
-    # 1. Try running only failed tests first
     typer.echo("🧪 Running failed tests (pytest --last-failed)...")
 
     stdout, stderr, returncode = await runner.run_command(
@@ -257,7 +273,6 @@ async def _fix_async() -> None:
     logs = stdout + "\n" + stderr
 
     if returncode == 0:
-        # 2. If no failures (or no history), run full suite
         typer.echo("✨ Last failed tests passed (or none). Running full suite...")
         stdout_full, stderr_full, returncode_full = await runner.run_command(
             [uv_path, "run", "pytest"], check=False
@@ -267,11 +282,8 @@ async def _fix_async() -> None:
         if returncode_full == 0:
             typer.secho("✨ All tests passed! Nothing to fix.", fg=typer.colors.GREEN)
             return
-
-        # Capture failure logs from full run
         logs = logs_full
 
-    # 3. Failures detected
     typer.secho("💥 Tests failed! Invoking Coder for repairs...", fg=typer.colors.RED)
 
     try:
@@ -283,7 +295,6 @@ async def _fix_async() -> None:
 
         changes: list[FileOperation] = result.output
 
-        # Reuse logic
         orchestrator = CycleOrchestrator("00", dry_run=False)
         orchestrator._apply_agent_changes(changes)
 
@@ -295,8 +306,6 @@ async def _fix_async() -> None:
 @app.command()
 def doctor() -> None:
     """環境チェック"""
-
-    # ツールとインストールガイドの辞書
     tools = {
         "git": "Install Git from https://git-scm.com/",
         "uv": "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh",
@@ -328,9 +337,7 @@ def friendly_error_handler() -> None:
         app()
     except Exception as e:
         console.print(Panel(f"An unexpected error occurred: {str(e)}", style="bold red"))
-        if settings.debug:  # Assuming Settings has debug or check env
-            console.print_exception()
-        elif os.getenv("DEBUG"):
+        if settings.debug or os.getenv("DEBUG"):
             console.print_exception()
         else:
             console.print("Run with DEBUG=1 environment variable to see full traceback.")
