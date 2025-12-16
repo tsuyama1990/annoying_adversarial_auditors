@@ -47,7 +47,7 @@ async def planner_node(state: CycleState) -> dict:
     if state.get("error"):
         user_task += f"\n\nPREVIOUS ERROR/FEEDBACK: {state['error']}"
 
-    result = await planner_agent.run(user_task, result_type=CyclePlan)
+    result = await planner_agent.run(user_task)
     plan: CyclePlan = result.output
 
     _save_plan_artifacts(cycle_id, plan)
@@ -74,7 +74,7 @@ async def spec_writer_node(state: CycleState) -> dict:
     user_task += f"\n\nReturn the code in a file named '{target_path}'."
     prompt_with_role = f"You are a QA Engineer.\n{user_task}"
 
-    result = await coder_agent.run(prompt_with_role, result_type=list[FileOperation])
+    result = await coder_agent.run(prompt_with_role)
     _apply_changes(result.output)
 
     return {"current_phase": "spec_written"}
@@ -118,7 +118,7 @@ async def coder_node(state: CycleState) -> dict:
             f"Implement the solution in {settings.paths.src}/."
         )
 
-    result = await coder_agent.run(prompt, result_type=list[FileOperation])
+    result = await coder_agent.run(prompt)
     _apply_changes(result.output)
 
     return {
@@ -211,7 +211,7 @@ async def auditor_node(state: CycleState) -> dict:
     files_content = _read_src_files()
     prompt = f"{user_task}\n\n{files_content}"
 
-    result = await auditor_agent.run(prompt, result_type=AuditResult)
+    result = await auditor_agent.run(prompt)
     audit_res: AuditResult = result.output
 
     if not audit_res.is_approved:
@@ -243,7 +243,7 @@ async def uat_node(state: CycleState) -> dict:
         "- Use `unittest.mock`, `pytest-mock`, or `vcrpy` to mock external connections.\n"
         "- Output valid Python code."
     )
-    result = await coder_agent.run(description, result_type=list[FileOperation])
+    result = await coder_agent.run(description)
     _apply_changes(result.output)
 
     # 2. Run Tests in Sandbox
@@ -259,7 +259,7 @@ async def uat_node(state: CycleState) -> dict:
     verdict = "PASS" if success else "FAIL"
     analyze_prompt = f"Analyze UAT logs. Verdict: {verdict}\nLogs:\n{logs[-5000:]}"
 
-    res = await qa_analyst_agent.run(analyze_prompt, result_type=UatAnalysis)
+    res = await qa_analyst_agent.run(analyze_prompt)
     analysis: UatAnalysis = res.output
 
     # Save report

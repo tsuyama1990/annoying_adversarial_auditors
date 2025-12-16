@@ -130,6 +130,21 @@ async def _start_cycle_async(
         console.print("[red]少なくとも1つのサイクルIDを指定してください (例: 01)[/red]")
         raise typer.Exit(code=1)
 
+    # Run RAG Indexing if not dry-run (or even if dry-run to test it?)
+    # Let's run it unless dry-run, or maybe just log in dry run.
+    # Instruction says: "Automatically run CodeIndexer.index() at start of cycle".
+    # Implementation:
+    if not dry_run:
+        try:
+            from ac_cdd.rag.indexer import CodeIndexer
+
+            console.print("[cyan]Indexing codebase for RAG...[/cyan]")
+            indexer = CodeIndexer()
+            indexer.index()
+            console.print("[green]Index updated.[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Indexing failed: {e}[/yellow]")
+
     if dry_run:
         console.print(
             "[yellow][DRY-RUN] Graph execution does not fully support dry-run yet.[/yellow]"

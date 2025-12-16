@@ -4,6 +4,9 @@ from typing import Any
 
 from .process_runner import ProcessRunner
 
+# Lazy import to avoid circular dependency or init issues if deps missing
+# from .rag.retriever import CodeRetriever
+
 
 class ToolNotFoundError(Exception):
     pass
@@ -25,15 +28,9 @@ class ToolWrapper:
     ) -> subprocess.CompletedProcess[Any]:
         full_cmd = [self.command] + args
 
-        # Delegate to ProcessRunner
-        # Note: ProcessRunner returns (stdout, stderr, returncode)
-        # We need to map it back to CompletedProcess to maintain existing API contract for now.
-
         stdout, stderr, returncode = await self.runner.run_command(full_cmd, check=check)
 
         if check and returncode != 0:
-            # Maintain the behavior of raising CalledProcessError if check=True
-            # ProcessRunner logs it, but we raise it here to satisfy ToolWrapper contract
             raise subprocess.CalledProcessError(returncode, full_cmd, output=stdout, stderr=stderr)
 
         return subprocess.CompletedProcess(
@@ -42,3 +39,27 @@ class ToolWrapper:
             stdout=stdout,
             stderr=stderr,
         )
+
+
+def semantic_code_search(query: str) -> str:
+    """
+    Search the codebase for relevant functions or classes using semantic search.
+    Useful for finding definitions, understanding logic, or checking dependencies.
+    """
+    from .rag.retriever import CodeRetriever
+
+    try:
+        retriever = CodeRetriever()
+        results = retriever.search(query)
+
+        if not results:
+            return "No relevant code found."
+
+        output = []
+        for r in results:
+            output.append(
+                f"=== {r['type'].upper()}: {r['name']} ({r['file_path']}) ===\n{r['content']}\n"
+            )
+        return "\n".join(output)
+    except Exception as e:
+        return f"Search failed: {str(e)}"

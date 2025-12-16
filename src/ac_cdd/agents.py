@@ -5,6 +5,7 @@ from pydantic_ai import Agent, RunContext
 
 from src.ac_cdd.config import settings
 from src.ac_cdd.domain_models import AuditResult, CyclePlan, FileOperation, UatAnalysis
+from src.ac_cdd.tools import semantic_code_search
 
 # Model Definition
 FAST_MODEL = "gemini-2.5-flash"
@@ -44,8 +45,11 @@ planner_agent: Agent[Any, CyclePlan] = Agent(
     SMART_MODEL,
     system_prompt=(
         "You are a Senior Software Architect. "
-        "Define robust and scalable design specifications based on requirements."
+        "Define robust and scalable design specifications based on requirements.\n"
+        "You have access to 'semantic_code_search'. "
+        "Before proposing changes, search for relevant existing code to understand dependencies."
     ),
+    tools=[semantic_code_search],
 )
 
 
@@ -65,8 +69,12 @@ coder_agent: Agent[Any, list[FileOperation]] = Agent(
         "For 'patch', providing the exact 'search_block' from the original file "
         "(including all whitespace/indentation) and the 'replace_block'. "
         "DO NOT return the full file content for existing files."
-        "Always explain your thought process."
+        "Always explain your thought process.\n"
+        "You have access to 'semantic_code_search'. "
+        "If you are modifying code, use this tool to find the definitions and usages "
+        "of relevant functions/classes to ensure you don't break dependencies."
     ),
+    tools=[semantic_code_search],
 )
 
 
@@ -83,6 +91,8 @@ auditor_agent: Agent[Any, AuditResult] = Agent(
         "Review code thoroughly for Pydantic contract violations, "
         "security issues, and design principles."
     ),
+    # Auditor typically receives file content in prompt, but search helps for cross-file checks
+    tools=[semantic_code_search],
 )
 
 
