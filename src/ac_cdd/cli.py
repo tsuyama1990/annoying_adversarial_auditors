@@ -152,7 +152,7 @@ async def _start_cycle_async(
             "audit_logs": "",
             "current_phase": "start",
             "error": None,
-            "sandbox_id": None
+            "sandbox_id": None,
         }
 
         with Progress(
@@ -238,7 +238,8 @@ async def _audit_async(repo: str) -> None:
 
         changes: list[FileOperation] = coder_result.output
 
-        orchestrator = CycleOrchestrator("00", dry_run=False)
+        orchestrator = CycleOrchestrator(settings.DUMMY_CYCLE_ID, dry_run=False)
+        orchestrator = CycleOrchestrator(settings.DUMMY_CYCLE_ID, dry_run=False)
         orchestrator._apply_agent_changes(changes)
 
     except Exception as e:

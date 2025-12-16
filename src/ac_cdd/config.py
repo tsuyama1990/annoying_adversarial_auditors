@@ -34,6 +34,11 @@ class PathsConfig(BaseSettings):
     tests: str = "tests"
     templates: str = "dev_documents/templates"
 
+    # Test subdirectories
+    property_tests: str = "tests/property"
+    unit_tests: str = "tests/unit"
+    e2e_tests: str = "tests/e2e"
+
     @model_validator(mode="after")
     def _set_dependent_paths(self) -> "PathsConfig":
         if not self.contracts_dir:
@@ -48,8 +53,25 @@ class ToolsConfig(BaseSettings):
     audit_cmd: str = "bandit"
     uv_cmd: str = "uv"
     mypy_cmd: str = "mypy"
+    ruff_cmd: str = "ruff"
     gemini_cmd: str = "gemini"
     jules_base_url: str = "https://jules.googleapis.com/v1alpha"
+
+
+class SandboxConfig(BaseSettings):
+    """Configuration for E2B Sandbox execution"""
+
+    model_config = ConfigDict(extra="ignore")
+    cwd: str = "/home/user"
+    dirs_to_sync: list[str] = ["src", "tests", "contracts", "dev_documents"]
+    files_to_sync: list[str] = ["pyproject.toml", "uv.lock", ".auditignore"]
+
+    # Commands to run in sandbox
+    install_cmd: str = "pip install uv"
+    test_cmd: list[str] = ["uv", "run", "pytest"]
+    lint_check_cmd: list[str] = ["uv", "run", "ruff", "check", "--fix", "."]
+    type_check_cmd: list[str] = ["uv", "run", "mypy", "src/"]
+    security_check_cmd: list[str] = ["uv", "run", "bandit", "-r", "src/", "-ll"]
 
 
 class AgentsConfig(BaseSettings):
@@ -68,9 +90,11 @@ class PromptsConfig(BaseSettings):
 
 class Settings(BaseSettings):
     MAX_RETRIES: int = 10
+    DUMMY_CYCLE_ID: str = "00"
 
     paths: PathsConfig = PathsConfig()
     tools: ToolsConfig = ToolsConfig()
+    sandbox: SandboxConfig = SandboxConfig()
     agents: AgentsConfig = AgentsConfig()
     prompts: PromptsConfig = PromptsConfig()
 
@@ -95,6 +119,8 @@ class Settings(BaseSettings):
                 settings.paths = PathsConfig(**data["paths"])
             if "tools" in data:
                 settings.tools = ToolsConfig(**data["tools"])
+            if "sandbox" in data:
+                settings.sandbox = SandboxConfig(**data["sandbox"])
             if "agents" in data:
                 settings.agents = AgentsConfig(**data["agents"])
             if "prompts" in data:

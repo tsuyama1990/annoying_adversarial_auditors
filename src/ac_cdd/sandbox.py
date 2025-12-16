@@ -3,6 +3,7 @@ from pathlib import Path
 
 from e2b_code_interpreter import Sandbox
 
+from .config import settings
 from .utils import logger
 
 
@@ -11,11 +12,13 @@ class SandboxRunner:
     Executes code and commands in an E2B Sandbox for safety and isolation.
     """
 
-    def __init__(self, sandbox_id: str | None = None, cwd: str = "/home/user"):
+    def __init__(self, sandbox_id: str | None = None, cwd: str | None = None):
         self.api_key = os.getenv("E2B_API_KEY")
         if not self.api_key:
             logger.warning("E2B_API_KEY not found. Sandbox execution will fail.")
-        self.cwd = cwd
+
+        # Use settings for defaults if not provided
+        self.cwd = cwd or settings.sandbox.cwd
         self.sandbox_id = sandbox_id
         self.sandbox: Sandbox | None = None
 
@@ -38,8 +41,9 @@ class SandboxRunner:
         self.sandbox = await Sandbox.create(api_key=self.api_key)
 
         # Initial setup: install UV and sync files
-        # Note: E2B standard sandbox might not have uv.
-        await self.sandbox.commands.run("pip install uv")
+        if settings.sandbox.install_cmd:
+            await self.sandbox.commands.run(settings.sandbox.install_cmd)
+
         await self._sync_to_sandbox(self.sandbox)
 
         return self.sandbox
@@ -58,11 +62,7 @@ class SandboxRunner:
         command_str = " ".join(cmd)
         logger.info(f"[Sandbox] Running: {command_str}")
 
-        exec_result = await sandbox.commands.run(
-            command_str,
-            cwd=self.cwd,
-            envs=env or {}
-        )
+        exec_result = await sandbox.commands.run(command_str, cwd=self.cwd, envs=env or {})
 
         stdout = exec_result.stdout
         stderr = exec_result.stderr
@@ -77,17 +77,12 @@ class SandboxRunner:
 
     async def _sync_to_sandbox(self, sandbox: Sandbox) -> None:
         """
-        Uploads src/ and tests/ to the sandbox.
+        Uploads configured directories and files to the sandbox.
         """
         root = Path.cwd()
 
-        # We only sync specific source directories to avoid clutter
-        dirs_to_sync = ["src", "tests", "contracts", "dev_documents"]
-
-        # Also sync pyproject.toml and uv.lock for dependency installation
-        files_to_sync = ["pyproject.toml", "uv.lock", ".auditignore"]
-
-        for filename in files_to_sync:
+        # Sync individual files first
+        for filename in settings.sandbox.files_to_sync:
             file_path = root / filename
             if file_path.exists():
                 remote_path = f"{self.cwd}/{filename}"
@@ -97,13 +92,15 @@ class SandboxRunner:
                     except Exception as e:
                         logger.warning(f"Failed to sync {filename}: {e}")
 
-        for folder in dirs_to_sync:
+        # Sync directories
+        for folder in settings.sandbox.dirs_to_sync:
             local_folder = root / folder
             if not local_folder.exists():
                 continue
 
             for file_path in local_folder.rglob("*"):
                 if file_path.is_file():
+                    # Filter generic ignored
                     if "__pycache__" in str(file_path) or ".git" in str(file_path):
                         continue
 
@@ -111,9 +108,6 @@ class SandboxRunner:
                     remote_path = f"{self.cwd}/{rel_path}"
 
                     try:
-                        # E2B writes recursively create dirs if needed usually,
-                        # but let's be safe if SDK requires it.
-                        # The current SDK handles it.
                         with open(file_path, "rb") as f:
                             await sandbox.files.write(remote_path, f)
                     except Exception as e:
