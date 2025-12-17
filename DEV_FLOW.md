@@ -6,11 +6,11 @@ The core orchestration is handled by `LangGraph`.
 
 ```mermaid
 stateDiagram-v2
-stateDiagram-v2
-    [*] --> CheckArtifacts
-    CheckArtifacts --> Planner: No Artifacts
-    CheckArtifacts --> SpecWriter: Artifacts Exist (Offline Plan)
-    Planner --> SpecWriter: Reads ALL_SPEC.md -> Generates Cycle Plan
+    [*] --> CheckArchitecture
+    CheckArchitecture --> Structurer: No SYSTEM_ARCHITECTURE
+    CheckArchitecture --> Planner: SYSTEM_ARCHITECTURE Exists
+    Structurer --> Planner: Generates SYSTEM_ARCHITECTURE
+    Planner --> SpecWriter: Reads SYSTEM_ARCHITECTURE -> Generates Cycle Plan
     SpecWriter --> Coder: Schema & Property Tests Ready
 
     state ImplementationLoop {
@@ -38,7 +38,8 @@ stateDiagram-v2
 
 ## Agents
 
+- **Structurer**: System Architect (Gemini 2.5 Pro)
 - **Planner**: Architect (Gemini 2.5 Pro)
-- **Coder**: Senior Engineer (Gemini 2.5 Flash)
+- **Coder**: Senior Engineer (Gemini 2.5 Pro)
 - **QA Analyst**: Test Engineer (Gemini 2.5 Flash)
 - **Auditor**: Security Specialist (Gemini 2.5 Pro)

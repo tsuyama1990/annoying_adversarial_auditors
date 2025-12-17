@@ -40,11 +40,17 @@ class SandboxRunner:
                 )
 
         logger.info("Creating new E2B Sandbox...")
-        self.sandbox = await Sandbox.create(api_key=self.api_key)
+        self.sandbox = await Sandbox.create(
+            api_key=self.api_key,
+            template=settings.sandbox.template
+        )
 
         # Initial setup: install UV and sync files
         if settings.sandbox.install_cmd:
-            await self.sandbox.commands.run(settings.sandbox.install_cmd)
+            await self.sandbox.commands.run(
+                settings.sandbox.install_cmd,
+                timeout=settings.sandbox.timeout
+            )
 
         await self._sync_to_sandbox(self.sandbox)
 
@@ -64,7 +70,12 @@ class SandboxRunner:
         command_str = " ".join(cmd)
         logger.info(f"[Sandbox] Running: {command_str}")
 
-        exec_result = await sandbox.commands.run(command_str, cwd=self.cwd, envs=env or {})
+        exec_result = await sandbox.commands.run(
+            command_str,
+            cwd=self.cwd,
+            envs=env or {},
+            timeout=settings.sandbox.timeout
+        )
 
         stdout = exec_result.stdout
         stderr = exec_result.stderr
@@ -113,7 +124,10 @@ class SandboxRunner:
         await sandbox.files.write(remote_tar_path, tar_buffer)
 
         # Extract
-        await sandbox.commands.run(f"tar -xzf bundle.tar.gz -C {self.cwd}")
+        await sandbox.commands.run(
+            f"tar -xzf bundle.tar.gz -C {self.cwd}",
+            timeout=settings.sandbox.timeout
+        )
         logger.info("Synced files to sandbox via tarball.")
 
     async def close(self) -> None:
