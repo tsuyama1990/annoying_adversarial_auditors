@@ -9,6 +9,7 @@ This project uses a State Graph to orchestrate AI agents for planning, coding, t
 
 ```mermaid
 graph TD
+    Structurer --> Planner
     Planner --> SpecWriter
     SpecWriter --> Coder
     Coder --> Tester
@@ -49,6 +50,9 @@ graph TD
    - `E2B_API_KEY`: For Sandbox execution (Get one at [e2b.dev](https://e2b.dev)).
    - `LOGFIRE_TOKEN`: (Optional) For observability.
 
+4. **Configuration (Optional)**:
+   You can customize agent models and paths in `ac_cdd_config.py` in the root directory.
+
 ## Usage
 
 ### 0. Define Grand Design (Critical)
@@ -62,46 +66,22 @@ The agents use `dev_documents/ALL_SPEC.md` as the "Constitution" of your project
    ```
 2. **Write your Requirements**:
    Edit `dev_documents/ALL_SPEC.md`. Describe the project goal, architecture, and feature backlog.
-   *The Planner Agent will read this to generate cycle plans.*
+   *The Structurer Agent will read this to generate the System Architecture.*
 
-### 0.5 Refine Specification (New!)
-Convert your raw ideas into a rigorous, structured specification using the **Architect Agent**.
-
-```bash
-uv run manage.py refine-spec
-```
-
-This will generate `dev_documents/ALL_SPEC_STRUCTURED.md`.
-**Review this file!** It will serve as the strict constitution for all subsequent AI agents.
-
-### 1. Plan the Cycle (Two Options)
-
-**Option A: Automated Planning (Default)**
-Run `start-cycle` directly. The Planner Agent will read `ALL_SPEC.md` and generate artifacts for you.
-
-**Option B: Manual/Offline Planning (Recommended)**
-For complex features, you may want to co-design the spec with a superior model (e.g., Gemini Advanced, ChatGPT o1) before starting.
-
-1. Copy the prompt: `dev_documents/templates/CYCLE_PLANNING_PROMPT.md`
-2. Chat with an LLM and paste `ALL_SPEC.md`.
-3. Save the output files to `dev_documents/CYCLExx/` (`SPEC.md`, `schema.py`, `UAT.md`).
-4. Run:
-   ```bash
-   uv run manage.py start-cycle 01
-   ```
-   *The tool will detect existing files and skip the planning phase.*
-
-### 2. Start Development Cycle
+### 1. Start Development Cycle
 ```bash
 uv run manage.py start-cycle 01
 ```
-This will:
-1. **Read `ALL_SPEC.md`** (or use existing `SPEC.md`).
-2. Generate property tests.
-3. Implement code.
-4. Run tests in E2B Sandbox.
-5. Audit code (Static Analysis + LLM).
-6. Run UAT in E2B Sandbox.
+
+**What happens:**
+1. **Structurer Phase**: If `dev_documents/SYSTEM_ARCHITECTURE.md` does not exist, the **Structurer Agent** reads `ALL_SPEC.md` and generates a comprehensive architecture design.
+2. **Planning Phase**: The **Planner Agent** reads the architecture and generates artifacts for the current cycle (`SPEC.md`, `schema.py`, `UAT.md`).
+3. **Implementation Loop**:
+   - Generate property tests.
+   - Implement code.
+   - Run tests in E2B Sandbox.
+   - Audit code (Static Analysis + LLM).
+   - Run UAT in E2B Sandbox.
 
 ### Create a New Cycle
 ```bash
@@ -111,8 +91,9 @@ uv run manage.py new-cycle 02
 ### Ad-hoc Commands
 - **Audit**: `uv run manage.py audit` (Review git diffs)
 - **Fix**: `uv run manage.py fix` (Fix failed tests)
+- **Refine Spec**: `uv run manage.py refine-spec` (Manually trigger structured spec generation)
 - **Check Env**: `uv run manage.py doctor`
 
 ## Development Flow
 
-See [DEV_FLOW.md](./DEV_FLOW.md) for detailed architecture diagrams.
+See [DEV_FLOW.md](./DEV_FLOW.md) for detailed architecture diagrams and the philosophical "Constitution" of the project.

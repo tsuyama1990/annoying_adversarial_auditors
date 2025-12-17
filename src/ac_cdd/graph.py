@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 
@@ -8,11 +8,13 @@ from .agents import (
     coder_agent,
     planner_agent,
     qa_analyst_agent,
+    structurer_agent,
 )
 from .config import settings
 from .domain_models import (
     AuditResult,
     CyclePlan,
+    SystemArchitecture,
     UatAnalysis,
 )
 from .presentation import ConsolePresenter
@@ -28,7 +30,56 @@ artifact_manager = ArtifactManager()
 presenter = ConsolePresenter()
 
 
-async def planner_node(state: CycleState) -> dict:
+async def structurer_node(state: CycleState) -> dict[str, Any]:
+    """
+    Phase -1: Structure Requirements
+    Generates SYSTEM_ARCHITECTURE.md from ALL_SPEC.md.
+    """
+    logger.info("Phase: Structurer")
+
+    docs_dir = Path(settings.paths.documents_dir)
+    all_spec_path = docs_dir / "ALL_SPEC.md"
+
+    if not all_spec_path.exists():
+        logger.warning(f"{all_spec_path} not found. Skipping Structurer.")
+        return {"current_phase": "structuring_skipped"}
+
+    spec_content = all_spec_path.read_text(encoding="utf-8")
+
+    user_task = (
+        "Analyze the following raw requirements and create a comprehensive "
+        "System Architecture Design.\n\n"
+        f"RAW REQUIREMENTS:\n{spec_content}"
+    )
+
+    result = await structurer_agent.run(user_task)
+    architecture: SystemArchitecture = result.output
+
+    # Save artifacts
+    out_md = docs_dir / "SYSTEM_ARCHITECTURE.md"
+    out_json = docs_dir / "SYSTEM_ARCHITECTURE.json"
+
+    # Simple Markdown rendering
+    md_content = (
+        f"# System Architecture: {settings.paths.package_dir}\n\n"
+        f"## Background\n{architecture.background}\n\n"
+        f"## Philosophy\n{architecture.philosophy}\n\n"
+        f"## User Stories\n" + "\n".join(f"- {s}" for s in architecture.user_stories) + "\n\n"
+        f"## System Design\n{architecture.system_design}\n\n"
+        f"## Module Design\n{architecture.module_design}\n\n"
+        f"## Tech Stack\n" + "\n".join(f"- {t}" for t in architecture.tech_stack) + "\n\n"
+        "## Implementation Roadmap\n"
+        + "\n".join(f"- {r}" for r in architecture.implementation_roadmap)
+    )
+
+    out_md.write_text(md_content, encoding="utf-8")
+    out_json.write_text(architecture.model_dump_json(indent=2), encoding="utf-8")
+
+    logger.info("SYSTEM_ARCHITECTURE generated.")
+    return {"current_phase": "structuring_complete"}
+
+
+async def planner_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 0: Planning Phase
     Generates SPEC, Schema, and UAT artifacts.
@@ -44,9 +95,23 @@ async def planner_node(state: CycleState) -> dict:
         logger.info(f"Plan artifacts found at {cycle_dir}. Skipping generation.")
         return {"current_phase": "planning_complete", "error": None}
 
-    # Priority 1: Use Structured JSON if available
+    # Priority 1: Use System Architecture (Structured) if available
+    # Modified to look for SYSTEM_ARCHITECTURE.json primarily
+    sys_arch_json = Path(settings.paths.documents_dir) / "SYSTEM_ARCHITECTURE.json"
+
+    # Fallback to older structured spec if needed
     structured_json_path = Path(settings.paths.documents_dir) / "ALL_SPEC_STRUCTURED.json"
-    if structured_json_path.exists():
+
+    if sys_arch_json.exists():
+        logger.info("Using System Architecture (JSON) for planning.")
+        json_content = sys_arch_json.read_text(encoding="utf-8")
+        user_task = (
+            f"You are the Planner. The user has defined a strict System Architecture.\n\n"
+            f"SYSTEM_ARCHITECTURE_JSON:\n{json_content}\n\n"
+            f"Based STRICTLY on this Architecture, generate the artifacts for CYCLE{cycle_id}.\n"
+            f"Consult the 'implementation_roadmap' to see what belongs in this cycle.\n"
+        )
+    elif structured_json_path.exists():
         logger.info("Using Structured Spec (JSON) for planning.")
         json_content = structured_json_path.read_text(encoding="utf-8")
         user_task = (
@@ -64,7 +129,10 @@ async def planner_node(state: CycleState) -> dict:
         if planning_prompt_path.exists():
             base_prompt = planning_prompt_path.read_text(encoding="utf-8")
 
-        user_task = f"{base_prompt}\n\nFocus specifically on generating artifacts for CYCLE{cycle_id}."
+        user_task = (
+            f"{base_prompt}\n\n"
+            f"Focus specifically on generating artifacts for CYCLE{cycle_id}."
+        )
 
     if state.get("goal"):
         user_task += f"\n\nUSER GOAL/INSTRUCTION: {state['goal']}"
@@ -80,7 +148,7 @@ async def planner_node(state: CycleState) -> dict:
     return {"plan": plan, "current_phase": "planning_complete", "error": None}
 
 
-async def spec_writer_node(state: CycleState) -> dict:
+async def spec_writer_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 3.1: Align Contracts (Sync Schema)
     """
@@ -92,7 +160,7 @@ async def spec_writer_node(state: CycleState) -> dict:
     return {"current_phase": "contracts_aligned"}
 
 
-async def test_generator_node(state: CycleState) -> dict:
+async def test_generator_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 3.2: Generate Property Tests
     """
@@ -123,7 +191,7 @@ async def test_generator_node(state: CycleState) -> dict:
     return {"current_phase": "tests_generated"}
 
 
-async def coder_node(state: CycleState) -> dict:
+async def coder_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 3.3: Implementation
     """
@@ -136,7 +204,8 @@ async def coder_node(state: CycleState) -> dict:
     is_fix = state.get("error") is not None
 
     if is_fix:
-        feedback = state["error"]
+        # Ensure feedback is a string
+        feedback = state.get("error", "") or ""
         # Enhance prompt with structured audit result if available
         audit_res = state.get("audit_result")
         if audit_res and not audit_res.is_approved:
@@ -190,7 +259,7 @@ async def coder_node(state: CycleState) -> dict:
     }
 
 
-async def tester_node(state: CycleState) -> dict:
+async def tester_node(state: CycleState) -> dict[str, Any]:
     """
     Phase: Testing (Property + Unit)
     Runs in E2B Sandbox.
@@ -234,7 +303,7 @@ async def tester_node(state: CycleState) -> dict:
         return {"error": str(e), "current_phase": "testing_failed"}
 
 
-async def auditor_node(state: CycleState) -> dict:
+async def auditor_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 3.4: Strict Audit
     Runs static analysis (Sandbox) and LLM Audit (Local).
@@ -304,7 +373,7 @@ async def auditor_node(state: CycleState) -> dict:
     return {"audit_result": audit_res, "error": None, "current_phase": "audit_passed"}
 
 
-async def uat_node(state: CycleState) -> dict:
+async def uat_node(state: CycleState) -> dict[str, Any]:
     """
     Phase 3.5: UAT
     Generate UAT tests, run them in Sandbox, Analyze results.
@@ -376,6 +445,7 @@ def build_graph() -> StateGraph[CycleState]:
     workflow = StateGraph(CycleState)
 
     # Add Nodes
+    workflow.add_node("structurer", structurer_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("spec_writer", spec_writer_node)
     workflow.add_node("test_generator", test_generator_node)
@@ -385,7 +455,19 @@ def build_graph() -> StateGraph[CycleState]:
     workflow.add_node("uat", uat_node)
 
     # Define Edges
-    workflow.set_entry_point("planner")
+    # Conditional Entry Point
+    def check_structure(state: CycleState) -> Literal["structurer", "planner"]:
+        # If SYSTEM_ARCHITECTURE.json/md exists, skip to planner
+        sys_arch = Path(settings.paths.documents_dir) / "SYSTEM_ARCHITECTURE.json"
+        if sys_arch.exists():
+            return "planner"
+        return "structurer"
+
+    workflow.set_conditional_entry_point(
+        check_structure, {"structurer": "structurer", "planner": "planner"}
+    )
+
+    workflow.add_edge("structurer", "planner")
     workflow.add_edge("planner", "spec_writer")
     workflow.add_edge("spec_writer", "test_generator")
     workflow.add_edge("test_generator", "coder")
@@ -431,7 +513,7 @@ def build_graph() -> StateGraph[CycleState]:
     return workflow
 
 
-async def diff_auditor_node(state: CycleState) -> dict:
+async def diff_auditor_node(state: CycleState) -> dict[str, Any]:
     """
     Ad-hoc Phase: Diff Auditor
     Reviews git diff and provides feedback.
@@ -452,7 +534,7 @@ async def diff_auditor_node(state: CycleState) -> dict:
         f"Git Diff:\n{diff}"
     )
 
-    result = await auditor_agent.run(user_task, result_type=AuditResult)
+    result = await auditor_agent.run(user_task)
     audit_res: AuditResult = result.output
 
     if audit_res.is_approved:
