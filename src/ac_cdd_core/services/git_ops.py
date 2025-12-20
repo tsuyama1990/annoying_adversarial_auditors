@@ -9,7 +9,7 @@ class GitManager:
     Uses 'git' and 'gh' CLI commands.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.runner = ProcessRunner()
         self.git_cmd = "git"
         self.gh_cmd = settings.tools.gh_cmd
@@ -21,7 +21,7 @@ class GitManager:
             raise RuntimeError(f"Git command failed: {' '.join(cmd)}\nStderr: {stderr}")
         return stdout.strip()
 
-    async def ensure_clean_state(self):
+    async def ensure_clean_state(self) -> None:
         """Ensures the working directory is clean."""
         status = await self._run_git(["status", "--porcelain"])
         if status:
@@ -60,7 +60,7 @@ class GitManager:
         logger.info(f"Committed: {message}")
         return True
 
-    async def merge_branch(self, target: str, source: str):
+    async def merge_branch(self, target: str, source: str) -> None:
         """
         Merges source into target.
         """
