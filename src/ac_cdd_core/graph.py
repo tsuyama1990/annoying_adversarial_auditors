@@ -6,12 +6,13 @@ from langgraph.graph import END, StateGraph
 from .agents import qa_analyst_agent
 from .config import settings
 from .domain_models import UatAnalysis
+from .process_runner import ProcessRunner
 from .service_container import ServiceContainer
+from .services.git_ops import GitManager
+from .services.jules_client import JulesClient
 from .state import CycleState
 from .utils import logger
-from .services.jules_client import JulesClient
-from .services.git_ops import GitManager
-from .process_runner import ProcessRunner
+
 
 class GraphBuilder:
     def __init__(self, services: ServiceContainer):
