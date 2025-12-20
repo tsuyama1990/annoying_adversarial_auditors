@@ -12,3 +12,7 @@ build/
 .ruff_cache/
 .hypothesis/
 .mypy_cache/
+
+*.*sqlite*
+*.db
+.lancedb/*

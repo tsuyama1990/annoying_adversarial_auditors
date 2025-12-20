@@ -1,6 +1,5 @@
 # Autonomous Development Environment (AC-CDD)
-** README.md under root directory can be replaced by the one for actual development.
-The same contents can be found in dev_documents/README.md **
+
 An AI-Native Cycle-Based Contract-Driven Development Environment.
 
 This repository is a template for creating AI-powered software development projects. It separates the agent orchestration logic from the user's product code.
