@@ -6,6 +6,12 @@ If you find any errors in the raw requirements, you must correct them.
 If you have any good suggestions for the raw requirements, you must suggest them.
 (e.g. Modernize the architectures, codes, add more features, etc.)
 
+**CRITICAL WARNING - READ THIS FIRST:**
+1. **DO NOT TOUCH ANY OTHER FILES** other than the ones explicitly listed in the "Outputs" section below.
+2. **DO NOT START IMPLEMENTATION.** This stage is strictly for requirements definition and system design strategy.
+3. Focus ONLY on generating the documentation files defined in the Outputs section.
+4. ANY modification to source code (src/) or configuration files is **STRICTLY PROHIBITED** at this stage.
+
 ## Inputs
 - `ALL_SPEC.md`: The raw requirement document.
 
@@ -89,7 +95,7 @@ FILENAME: dev_documents/plan_status.json
 ```json
 {
   "status": "completed",
-  "cycles": ["01", "02"]
+  "cycles": ["01", "02", "03", "..."]
 }
 ```
 
@@ -98,3 +104,9 @@ FILENAME: dev_documents/plan_status.json
 2. Generate `SPEC.md` and `UAT.md` for ALL cycles (01, 02...).
 3. FINALLY, generate `plan_status.json` using the format above.
 4. DO NOT just say "I have completed". You MUST output the file contents in code blocks as shown.
+
+**FINAL REMINDER**
+- DO NOT MODIFY ANY FILES except the documentation files listed in the "Outputs" section.
+- DO NOT WRITE APPLICATION CODE at this stage.
+- ONLY perform requirements analysis and system design.
+- Your task is strictly limited to generating SYSTEM_ARCHITECTURE.md, SPEC.md, UAT.md, and plan_status.json.
