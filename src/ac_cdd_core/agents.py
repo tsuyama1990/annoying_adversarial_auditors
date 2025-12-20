@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
 
 from src.ac_cdd_core.config import settings
 from src.ac_cdd_core.domain_models import (
@@ -43,11 +44,38 @@ def _get_system_context() -> str:
     return "\n\n".join(context)
 
 
+def get_model(model_name: str) -> Any:
+    """
+    Parses the model name and returns an OpenAIModel with appropriate settings
+    if it is an OpenRouter model.
+    """
+    if model_name.startswith("openrouter/"):
+        # Example: openrouter/anthropic/claude-3.5-sonnet -> anthropic/claude-3.5-sonnet
+        real_model_name = model_name.replace("openrouter/", "", 1)
+
+        # Get API key from settings
+        api_key = settings.OPENROUTER_API_KEY
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY is not set but OpenRouter model is requested.")
+
+        return OpenAIModel(
+            model_name=real_model_name,
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
+
+    # If gemini/ prefix exists, or just return the string (let PydanticAI handle it)
+    if model_name.startswith("gemini/"):
+        return model_name.replace("gemini/", "", 1)
+
+    return model_name
+
+
 # --- Agents ---
 
 # Auditor Agent
 auditor_agent: Agent[Any, AuditResult] = Agent(
-    settings.agents.auditor_model,
+    model=get_model(settings.agents.auditor_model),
     system_prompt=settings.agents.auditor,
     # Auditor typically receives file content in prompt, but search helps for cross-file checks
     tools=[semantic_code_search],
@@ -61,7 +89,7 @@ def auditor_system_prompt(ctx: RunContext[Any]) -> str:
 
 # QA Analyst Agent
 qa_analyst_agent: Agent[Any, UatAnalysis] = Agent(
-    settings.agents.qa_analyst_model,
+    model=get_model(settings.agents.qa_analyst_model),
     system_prompt=settings.agents.qa_analyst,
 )
 
