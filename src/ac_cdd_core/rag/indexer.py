@@ -3,10 +3,11 @@ from pathlib import Path
 from typing import Any
 
 import lancedb
-from ac_cdd_core.utils import logger
 from lancedb.pydantic import LanceModel, Vector
 from sentence_transformers import SentenceTransformer
 from tree_sitter_languages import get_language, get_parser
+
+from ac_cdd_core.utils import logger
 
 # Configuration
 DB_PATH = Path(".lancedb")

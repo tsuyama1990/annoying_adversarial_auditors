@@ -45,6 +45,13 @@ class PathsConfig(BaseSettings):
             self.contracts_dir = f"{self.package_dir}/contracts"
         return self
 
+class JulesConfig(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+    # Point to the mock script by default for this environment
+    executable: str = str(Path("tests/mock_jules.py").absolute())
+    timeout_seconds: int = 600
+    polling_interval_seconds: int = 5
+
 
 class ToolsConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
@@ -119,6 +126,7 @@ class Settings(BaseSettings):
     DUMMY_CYCLE_ID: str = "00"
 
     paths: PathsConfig = PathsConfig()
+    jules: JulesConfig = JulesConfig()
     tools: ToolsConfig = ToolsConfig()
     sandbox: SandboxConfig = SandboxConfig()
     agents: AgentsConfig = AgentsConfig()

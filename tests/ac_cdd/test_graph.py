@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from ac_cdd_core.domain_models import CyclePlan, FileArtifact
 from ac_cdd_core.graph import GraphBuilder
 from ac_cdd_core.state import CycleState
