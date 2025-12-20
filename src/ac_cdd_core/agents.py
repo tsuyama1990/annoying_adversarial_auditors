@@ -6,10 +6,6 @@ from pydantic_ai import Agent, RunContext
 from src.ac_cdd_core.config import settings
 from src.ac_cdd_core.domain_models import (
     AuditResult,
-    CyclePlan,
-    FileOperation,
-    StructuredSpec,
-    SystemArchitecture,
     UatAnalysis,
 )
 from src.ac_cdd_core.tools import semantic_code_search
@@ -49,44 +45,6 @@ def _get_system_context() -> str:
 
 # --- Agents ---
 
-# Structurer Agent
-structurer_agent: Agent[Any, SystemArchitecture] = Agent(
-    settings.agents.structurer_model,
-    system_prompt=settings.agents.structurer,
-)
-
-
-@structurer_agent.system_prompt
-def structurer_system_prompt(ctx: RunContext[Any]) -> str:
-    return _get_system_context()
-
-
-# Planner Agent
-planner_agent: Agent[Any, CyclePlan] = Agent(
-    settings.agents.planner_model,
-    system_prompt=settings.agents.planner,
-    tools=[semantic_code_search],
-)
-
-
-@planner_agent.system_prompt
-def planner_system_prompt(ctx: RunContext[Any]) -> str:
-    return _get_system_context()
-
-
-# Coder Agent
-coder_agent: Agent[Any, list[FileOperation]] = Agent(
-    settings.agents.coder_model,
-    system_prompt=settings.agents.coder,
-    tools=[semantic_code_search],
-)
-
-
-@coder_agent.system_prompt
-def coder_system_prompt(ctx: RunContext[Any]) -> str:
-    return _get_system_context()
-
-
 # Auditor Agent
 auditor_agent: Agent[Any, AuditResult] = Agent(
     settings.agents.auditor_model,
@@ -111,10 +69,3 @@ qa_analyst_agent: Agent[Any, UatAnalysis] = Agent(
 @qa_analyst_agent.system_prompt
 def qa_analyst_system_prompt(ctx: RunContext[Any]) -> str:
     return _get_system_context()
-
-
-# Architect Agent (Spec Refiner)
-architect_agent: Agent[Any, StructuredSpec] = Agent(
-    settings.agents.architect_model,
-    system_prompt=settings.agents.architect,
-)
