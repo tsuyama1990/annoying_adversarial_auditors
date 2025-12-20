@@ -83,9 +83,9 @@ class JulesClient:
             # Using run_in_executor to avoid blocking event loop
             await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: subprocess.run(
+                lambda: subprocess.run(  # noqa: S603
                     cmd, check=True, capture_output=True, text=True
-                )
+                ),
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Jules CLI failed: {e.stderr}")

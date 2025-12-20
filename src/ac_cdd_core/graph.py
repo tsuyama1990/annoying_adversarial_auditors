@@ -3,15 +3,17 @@ from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 
-from .agents import qa_analyst_agent
+from .agents import auditor_agent, qa_analyst_agent
 from .config import settings
-from .domain_models import UatAnalysis
+from .domain_models import AuditResult, UatAnalysis
 from .process_runner import ProcessRunner
 from .service_container import ServiceContainer
 from .services.git_ops import GitManager
 from .services.jules_client import JulesClient
 from .state import CycleState
 from .utils import logger
+
+MAX_AUDIT_RETRIES = 2
 
 
 class GraphBuilder:
@@ -87,9 +89,21 @@ class GraphBuilder:
         uat_file = cycle_dir / "UAT.md"
         arch_file = Path(settings.paths.documents_dir) / "SYSTEM_ARCHITECTURE.md"
 
-        # Prepare instruction
-        base_instruction = template_path.read_text(encoding="utf-8")
-        instruction = base_instruction.replace("{{cycle_id}}", cycle_id)
+        audit_feedback = state.get("audit_feedback")
+
+        if audit_feedback:
+            logger.info("Applying Audit Feedback to Coder Instructions.")
+            feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
+            instruction = (
+                f"Your previous implementation FAILED the strict audit.\n"
+                f"You must fix the following CRITICAL ISSUES immediately:\n\n"
+                f"{feedback_text}\n\n"
+                f"Check the existing code, apply fixes, and verify with tests."
+            )
+        else:
+            # Prepare standard instruction
+            base_instruction = template_path.read_text(encoding="utf-8")
+            instruction = base_instruction.replace("{{cycle_id}}", cycle_id)
 
         files = [str(template_path), str(arch_file)]
         if spec_file.exists():
@@ -158,12 +172,70 @@ class GraphBuilder:
 
         return {"current_phase": "uat_passed", "error": None}
 
+    async def auditor_node(self, state: CycleState) -> dict[str, Any]:
+        """Strict Auditor Node (Gemini) with Triple Check Strategy."""
+        logger.info("Phase: Strict Auditor")
+
+        current_pass = state.get("audit_pass_count", 0)
+        logger.info(f"Audit Pass Count: {current_pass}/{3} (Target: 3)")
+
+        # 1. Gather Context
+        runner = ProcessRunner()
+
+        # Tree with exclusions
+        tree_cmd = [
+            "tree", "-L", "3", "-I",
+            "__pycache__|.git|.venv|node_modules|site-packages|*.egg-info"
+        ]
+        tree_out, _, _ = await runner.run_command(tree_cmd, check=False)
+
+        # Git Diff
+        diff_out = await self.git.get_diff("main")
+
+        # Load Strict Persona Prompt
+        template_path = Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md"
+        if template_path.exists():
+            strict_persona = template_path.read_text(encoding="utf-8")
+        else:
+            # Fallback (should not happen if setup correctly)
+            strict_persona = "Act as a strict code auditor. Reject if any issues found."
+
+        prompt = (
+            f"{strict_persona}\n\n"
+            "=== DIRECTORY STRUCTURE ===\n"
+            f"{tree_out}\n\n"
+            "=== CHANGES (DIFF) ===\n"
+            f"{diff_out}\n\n"
+        )
+
+        # 2. Run Audit (Stateless)
+        # We start a fresh run to ensure no memory bias (Triple Check requirement)
+        result = await auditor_agent.run(prompt)
+        audit_result: AuditResult = result.output
+
+        if audit_result.is_approved:
+            logger.info("Audit Result: APPROVED")
+            return {
+                "audit_pass_count": current_pass + 1,
+                "audit_feedback": None,
+                "audit_result": audit_result,
+                "current_phase": "audit_passed"
+            }
+        else:
+            logger.warning("Audit Result: REJECTED")
+            return {
+                "audit_pass_count": 0,  # Reset on failure
+                "audit_retries": state.get("audit_retries", 0) + 1,
+                "audit_feedback": audit_result.critical_issues,
+                "audit_result": audit_result,
+                "current_phase": "audit_failed"
+            }
+
     async def commit_coder_node(self, state: CycleState) -> dict[str, Any]:
         """Commit implementation."""
         cycle_id = state["cycle_id"]
         await self.git.commit_changes(f"feat(cycle{cycle_id}): implement and verify features")
         return {"current_phase": "complete"}
-
 
     # --- Graph Construction ---
 
@@ -194,6 +266,7 @@ class GraphBuilder:
         workflow.add_node("coder_session", self.coder_session_node)
         workflow.add_node("run_tests", self.run_tests_node)
         workflow.add_node("uat_evaluate", self.uat_evaluate_node)
+        workflow.add_node("auditor", self.auditor_node)
         workflow.add_node("commit", self.commit_coder_node)
 
         workflow.set_entry_point("checkout_branch")
@@ -209,18 +282,56 @@ class GraphBuilder:
         )
         workflow.add_edge("run_tests", "uat_evaluate")
 
-        def check_uat(state: CycleState) -> Literal["commit", "end"]:
+        def check_uat(state: CycleState) -> Literal["auditor", "end"]:
             if state.get("error"):
                 return "end"
-            return "commit"
+            return "auditor"
 
-        workflow.add_conditional_edges("uat_evaluate", check_uat, {"commit": "commit", "end": END})
+        workflow.add_conditional_edges(
+            "uat_evaluate", check_uat, {"auditor": "auditor", "end": END}
+        )
+
+        def check_audit(state: CycleState) -> Literal["commit", "auditor", "coder_session", "end"]:
+            pass_count = state.get("audit_pass_count", 0)
+            retries = state.get("audit_retries", 0)
+
+            audit_result = state.get("audit_result")
+            is_approved = audit_result.is_approved if audit_result else False
+
+            # Case 1: Triple Check Passed
+            if pass_count >= 3:
+                return "commit"
+
+            # Case 2: Passed, but need more checks (Triple Check Loop)
+            if is_approved:
+                return "auditor"
+
+            # Case 3: Failed, but have retries left (Feedback Loop)
+            if retries < MAX_AUDIT_RETRIES:
+                return "coder_session"
+
+            # Case 4: Failed and no retries left
+            return "end"
+
+        workflow.add_conditional_edges(
+            "auditor",
+            check_audit,
+            {
+                "commit": "commit",
+                "auditor": "auditor",
+                "coder_session": "coder_session",
+                "end": END,
+            },
+        )
+
         workflow.add_edge("commit", END)
 
         return workflow
 
+
 def build_architect_graph(services: ServiceContainer) -> StateGraph[CycleState]:
     return GraphBuilder(services).build_architect_graph()
+
 
 def build_coder_graph(services: ServiceContainer) -> StateGraph[CycleState]:
     return GraphBuilder(services).build_coder_graph()

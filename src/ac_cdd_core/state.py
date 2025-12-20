@@ -22,3 +22,7 @@ class CycleState(TypedDict):
     interactive: bool
     goal: str | None
     approved: bool | None  # For human-in-the-loop approval
+    # Strict Audit Fields
+    audit_pass_count: int
+    audit_retries: int
+    audit_feedback: list[str] | None

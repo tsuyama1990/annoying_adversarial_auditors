@@ -1,5 +1,5 @@
 # AI-Native Cycle-Based Contract-Driven Development (AC-CDD) Architecture
-Version: 1.0.0 Status: Active Author: Architect (User) & AI Orchestrator
+Version: 1.1.0 Status: Active Author: Architect (User) & AI Orchestrator
 
 ## 1. Philosophy & Objectives
 This project adopts a next-generation development framework designed to maximize the capabilities of Large Language Models (LLMs) while structurally eliminating their weaknesses (hallucinations, loss of context, variability in quality).
@@ -101,27 +101,28 @@ This step repeats up to N times until CI passes.
     *   🔴 **Failure**: Retrieves error logs and feeds back to Jules. "Tests failed. Fix it."
     *   🟢 **Success**: Proceeds to "Strict Audit".
 
-#### Step 3.4: The Strictest Audit
-**Role**: Gemini CLI (Auditor)
-
-*   **Review**: Reviews code that passed CI from the following perspectives:
-    *   **Pydantic Compliance**: Is `model_validate` etc. used correctly?
-    *   **Security**: Injection, hardcoded secrets, etc.
-    *   **Design**: Duplicate code, overly complex logic.
-*   **Judgment**:
-    *   🔴 **Reject**: Records feedback in `AUDIT_LOG.md`. Orchestrator presents this to Jules and forces a return to Step 3.3.
-    *   🟢 **Approve**: "Audit Passed". Proceeds to UAT.
-
-#### Step 3.5: UAT Generation & Execution (UAT Automation)
+#### Step 3.4: UAT Generation & Execution (UAT Automation)
 *   **Gen**: Jules reads `UAT.md` (natural language scenarios) and generates Playwright (Python) E2E test code in `tests/e2e/`.
 *   **Run**: Orchestrator executes the tests.
     *   🔴 **Failure**: Not working according to scenario. Instructions to Jules to fix (Jules decides whether to fix test code or implementation).
-    *   🟢 **Success**: Cycle completion requirements met.
+    *   🟢 **Success**: UAT Passed. Proceeds to "Strict Audit".
+
+#### Step 3.5: The Strictest Audit (Triple Check Strategy)
+**Role**: Gemini CLI (Auditor)
+
+*   **Review**: Reviews code that passed CI and UAT from the following perspectives:
+    *   **Pydantic Compliance**: Is `model_validate` etc. used correctly?
+    *   **Security**: Injection, hardcoded secrets, etc.
+    *   **Design**: Duplicate code, overly complex logic.
+*   **Triple Check**: The Auditor must approve the code **3 consecutive times** in stateless sessions to eliminate bias and flakiness.
+*   **Judgment**:
+    *   🔴 **Reject**: Records feedback in `audit_feedback`. Orchestrator presents this to Jules and forces a return to Step 3.3 (Fix Loop).
+    *   🟢 **Approve**: "Audit Passed". Cycle Complete.
 
 ### Phase 4: Auto-Merge & Completion
 **Actor**: Orchestrator (via gh CLI)
 
-Code that passes all gates up to UAT is defined as shippable quality.
+Code that passes all gates (CI -> UAT -> Strict Audit) is defined as shippable quality.
 
 1.  **Auto-Merge**: Orchestrator executes the merge command.
 2.  **Report**: Notifies User "CYCLE{N} Complete. PR #XX merged".
@@ -142,14 +143,19 @@ stateDiagram-v2
 
     state ImplementationLoop {
         Coder --> Tester: Code Implemented
-        Tester --> Auditor: Tests Passed
+        Tester --> UAT: Tests Passed
         Tester --> Coder: Tests Failed (Fix)
-        Auditor --> UAT: Strict Audit Passed
-        Auditor --> Coder: Audit Failed (Fix)
+
+        state AuditLoop {
+             UAT --> Auditor: UAT Passed
+             Auditor --> Auditor: Triple Check Loop (Pass)
+        }
+
+        Auditor --> Coder: Audit Failed (Feedback Loop)
+        UAT --> Coder: UAT Failed (Fix)
     }
 
-    UAT --> Coder: UAT Failed (Fix)
-    UAT --> [*]: UAT Passed (Cycle Complete)
+    AuditLoop --> [*]: Triple Check Passed (Commit)
 ```
 
 ## 6. Technical Stack & Requirements

@@ -14,11 +14,11 @@ graph TD
     SpecWriter --> Coder
     Coder --> Tester
     Tester -- Fail --> Coder
-    Tester -- Pass --> Auditor
-    Auditor -- Fail --> Coder
-    Auditor -- Pass --> UAT
+    Tester -- Pass --> UAT
     UAT -- Fail --> Coder
-    UAT -- Pass --> End
+    UAT -- Pass --> Auditor
+    Auditor -- Fail --> Coder
+    Auditor -- Pass x3 --> Commit
 ```
 
 ### Components
@@ -80,8 +80,8 @@ uv run manage.py start-cycle 01
    - Generate property tests.
    - Implement code.
    - Run tests in E2B Sandbox.
-   - Audit code (Static Analysis + LLM).
    - Run UAT in E2B Sandbox.
+   - **Strict Audit**: The Auditor reviews code 3 times consecutively (Triple Check) before passing.
 
 ### Create a New Cycle
 ```bash
@@ -96,4 +96,4 @@ uv run manage.py new-cycle 02
 
 ## Development Flow
 
-See [DEV_FLOW.md](./DEV_FLOW.md) for detailed architecture diagrams and the philosophical "Constitution" of the project.
+See [DEV_FLOW.md](./AGENT_DOCS/DEV_FLOW.md) for detailed architecture diagrams and the philosophical "Constitution" of the project.
