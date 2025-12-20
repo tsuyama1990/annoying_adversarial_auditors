@@ -27,6 +27,9 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.0.1",
 ]
 
+[project.scripts]
+ac-cdd = "ac_cdd_core.cli:app"
+
 [dependency-groups]
 dev = [
     "typer",

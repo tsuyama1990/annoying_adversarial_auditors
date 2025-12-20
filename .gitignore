@@ -16,3 +16,4 @@ build/
 *.*sqlite*
 *.db
 .lancedb/*
+.jules/
