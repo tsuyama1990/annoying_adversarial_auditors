@@ -10,7 +10,7 @@ from .domain_models import AuditResult, UatAnalysis
 from .process_runner import ProcessRunner
 from .service_container import ServiceContainer
 from .services.git_ops import GitManager
-from .services.jules_client import JulesClient
+from .services.jules_client_fixed import JulesClient
 from .state import CycleState
 from .utils import logger
 
