@@ -29,3 +29,4 @@ class CycleState(TypedDict):
     # Committee State
     current_auditor_index: int  # 1-based index (1 to NUM_AUDITORS)
     current_auditor_review_count: int  # 1-based count (1 to REVIEWS_PER_AUDITOR)
+    iteration_count: int  # Tracks fixed loops (Impl -> Audit -> Impl)

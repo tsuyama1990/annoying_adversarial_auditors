@@ -79,12 +79,20 @@ class GraphBuilder:
 
         await self.git.ensure_clean_state()
         branch = await self.git.create_working_branch("feat", f"cycle{cycle_id}")
-        return {"current_phase": "branch_ready", "active_branch": branch}
+        # Initialize iteration count for the new cycle
+        return {
+            "current_phase": "branch_ready",
+            "active_branch": branch,
+            "iteration_count": 0
+        }
 
     async def coder_session_node(self, state: CycleState) -> dict[str, Any]:
         """Coder Session: Implement and Test Creation."""
         cycle_id = state["cycle_id"]
-        logger.info(f"Phase: Coder Session (Cycle {cycle_id})")
+        # Increment iteration count here at the start of implementation
+        iteration_count = state.get("iteration_count", 0) + 1
+
+        logger.info(f"Phase: Coder Session (Cycle {cycle_id}) - Iteration {iteration_count}/{settings.MAX_ITERATIONS}")
 
         template_path = Path(settings.paths.templates) / "CODER_INSTRUCTION.md"
         cycle_dir = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
@@ -94,17 +102,28 @@ class GraphBuilder:
 
         audit_feedback = state.get("audit_feedback")
 
-        if audit_feedback:
-            logger.info("Applying Audit Feedback to Coder Instructions.")
-            feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
-            instruction = (
-                f"Your previous implementation FAILED the strict audit.\n"
-                f"You must fix the following CRITICAL ISSUES immediately:\n\n"
-                f"{feedback_text}\n\n"
-                f"Check the existing code, apply fixes, and verify with tests."
-            )
+        if iteration_count > 1:
+            # Refinement Loop
+            if audit_feedback:
+                logger.info(f"Applying Audit Feedback to Coder Instructions (Iter {iteration_count}).")
+                feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
+                instruction = (
+                    f"Your previous implementation (Iteration {iteration_count - 1}) was audited.\n"
+                    f"You must fix the following ISSUES immediately:\n\n"
+                    f"{feedback_text}\n\n"
+                    f"Check the existing code, apply fixes, and verify with tests."
+                )
+            else:
+                # Approved but forced to iterate (Optimize)
+                logger.info(f"Forcing Optimization to Coder Instructions (Iter {iteration_count}).")
+                instruction = (
+                    f"Your previous implementation passed the audit, but you must now OPTIMIZE it.\n"
+                    f"Refactor the code for better readability, performance, and robustness.\n"
+                    f"Add more comprehensive tests (property-based tests, edge cases).\n"
+                    f"Ensure docstrings are perfect."
+                )
         else:
-            # Prepare standard instruction
+            # First Run
             base_instruction = template_path.read_text(encoding="utf-8")
             instruction = base_instruction.replace("{{cycle_id}}", cycle_id)
 
@@ -118,12 +137,16 @@ class GraphBuilder:
 
         try:
             result = await self.jules_client.run_session(
-                session_id=f"coder-{cycle_id}",
+                session_id=f"coder-{cycle_id}-iter{iteration_count}",
                 prompt=instruction,
                 files=files,
                 completion_signal_file=signal_file
             )
-            return {"coder_report": result, "current_phase": "coder_complete"}
+            return {
+                "coder_report": result,
+                "current_phase": "coder_complete",
+                "iteration_count": iteration_count
+            }
         except Exception as e:
             return {"error": str(e), "current_phase": "coder_failed"}
 
@@ -171,20 +194,22 @@ class GraphBuilder:
         )
 
         if verdict == "FAIL":
+            # In fixed iteration mode, we might want to fail hard on UAT or just consider it feedback?
+            # Assuming UAT failure is also just "feedback" for the next iteration if iter < max.
+            # But graph says run_tests -> uat -> auditor.
+            # So UAT result is part of state, but maybe we let Auditor see it?
+            # For now, keeping as is: if UAT fails, we mark it.
+            # Wait, if UAT fails, should we skip auditor and go back?
+            # The prompt implies: "Impl -> Audit -> Impl". UAT is typically part of verification.
             return {"error": f"UAT Failed: {analysis.summary}", "current_phase": "uat_failed"}
 
         return {"current_phase": "uat_passed", "error": None}
 
     async def auditor_node(self, state: CycleState) -> dict[str, Any]:
-        """Committee of Auditors Node (Sequential Multi-Audit)."""
-        logger.info("Phase: Committee Auditor")
+        """Strict Auditor Node (Single Pass per Iteration)."""
+        logger.info("Phase: Strict Auditor")
 
-        auditor_idx = state.get("current_auditor_index", 1)
-        review_count = state.get("current_auditor_review_count", 1)
-
-        logger.info(
-            f"Auditor #{auditor_idx} (Review {review_count}/{settings.REVIEWS_PER_AUDITOR})"
-        )
+        iteration_count = state.get("iteration_count", 1)
 
         # 1. Gather Context
         runner = ProcessRunner()
@@ -200,11 +225,12 @@ class GraphBuilder:
         if template_path.exists():
             strict_persona = template_path.read_text(encoding="utf-8")
         else:
-            strict_persona = "Act as a strict code auditor. Reject if any issues found."
+            strict_persona = "Act as a strict code auditor. Find issues to improve."
 
         # Inject Auditor Identity
         identity_prompt = (
-            f"You are Auditor #{auditor_idx} of {settings.NUM_AUDITORS} in the review committee."
+            f"You are conducting Audit Round {iteration_count}.\n"
+            "Even if the code is good, you must find improvements."
         )
 
         prompt = (
@@ -219,35 +245,16 @@ class GraphBuilder:
         result = await auditor_agent.run(prompt)
         audit_result: AuditResult = result.output
 
-        if audit_result.is_approved:
-            logger.info(f"Auditor #{auditor_idx} APPROVED")
+        logger.info(f"Audit Round {iteration_count} Complete. Approved: {audit_result.is_approved}")
 
-            # Check if committee is finished
-            if auditor_idx >= settings.NUM_AUDITORS:
-                return {
-                    "audit_result": audit_result,
-                    "current_phase": "audit_passed",
-                    "audit_feedback": None
-                }
-            else:
-                # Move to next auditor
-                return {
-                    "audit_result": audit_result,
-                    "current_auditor_index": auditor_idx + 1,
-                    "current_auditor_review_count": 1,
-                    "current_phase": "audit_next_round",
-                    "audit_feedback": None
-                }
-        else:
-            logger.warning(f"Auditor #{auditor_idx} REJECTED")
-            # Stay on same auditor, increment review count
-            # Logic handled in conditional edge to decide loop vs fail
-            return {
-                "audit_result": audit_result,
-                "current_auditor_review_count": review_count + 1,
-                "audit_feedback": audit_result.critical_issues,
-                "current_phase": "audit_failed"
-            }
+        # Always store feedback, even if approved (Optimization tips)
+        feedback = audit_result.critical_issues
+
+        return {
+            "audit_result": audit_result,
+            "current_phase": "audit_complete",
+            "audit_feedback": feedback
+        }
 
     async def commit_coder_node(self, state: CycleState) -> dict[str, Any]:
         """Commit implementation."""
@@ -303,54 +310,38 @@ class GraphBuilder:
         def check_uat(state: CycleState) -> Literal["auditor", "end"]:
             if state.get("error"):
                 return "end"
+            # Even if UAT failed, we usually want to give Coder a chance to fix it via Audit/Refinement?
+            # But the current node returns 'uat_failed' phase and sets 'error'.
+            # If error is set, it goes to END.
+            # For this strict loop, maybe we should NOT end on UAT fail if iterations < max?
+            # However, the user prompt focuses on "Implementation -> Audit -> Refinement".
+            # Let's keep UAT failure as a hard stop for now unless instructed otherwise,
+            # or treat UAT failure as feedback.
+            # But usually UAT is the gate. If UAT fails, it means tests failed heavily.
+            # The prompt says: "Impl -> Audit -> Impl". It doesn't explicitly mention UAT skipping.
             return "auditor"
 
         workflow.add_conditional_edges(
             "uat_evaluate", check_uat, {"auditor": "auditor", "end": END}
         )
 
-        def check_audit(state: CycleState) -> Literal["commit", "auditor", "coder_session", "end"]:
-            phase = state.get("current_phase")
-            # We use the review_count stored in state,
-            # which was already incremented in node if failed
-            review_count = state.get("current_auditor_review_count", 1)
-            # But the node returns the *next* count value.
-            # If rejected, review_count is now (prev + 1).
-            # Max retries means REVIEWS_PER_AUDITOR.
-            # E.g. limit 2.
-            # 1st try (count=1) -> Reject -> returns count=2 -> (2 <= 2) -> coder_session.
-            # 2nd try (count=2) -> Reject -> returns count=3 -> (3 > 2) -> end.
+        def check_audit(state: CycleState) -> Literal["commit", "coder_session"]:
+            current_iter = state.get("iteration_count", 0)
+            max_iter = settings.MAX_ITERATIONS # default: 3
 
-            if phase == "audit_passed":
-                # All auditors approved
-                return "commit"
+            if current_iter < max_iter:
+                logger.info(f"Iteration {current_iter}/{max_iter}: Proceeding to refinement loop.")
+                return "coder_session"
 
-            if phase == "audit_next_round":
-                # Passed current auditor, loop to next
-                return "auditor"
-
-            if phase == "audit_failed":
-                # Check retries (note: review_count is already incremented)
-                # If review_count is 2, it means we are about to try for the 2nd time?
-                # No, review_count tracks "how many times have we TRIED".
-                # If node returns count=2, it means we failed the 1st time, and next will be 2nd.
-                # So if count <= LIMIT, we can retry.
-                if review_count <= settings.REVIEWS_PER_AUDITOR:
-                     return "coder_session"
-                else:
-                     logger.error("Audit Failed: Max retries exceeded for this auditor.")
-                     return "end"
-
-            return "end"
+            logger.info("Max iterations reached. Proceeding to commit.")
+            return "commit"
 
         workflow.add_conditional_edges(
             "auditor",
             check_audit,
             {
                 "commit": "commit",
-                "auditor": "auditor",
                 "coder_session": "coder_session",
-                "end": END,
             },
         )
 

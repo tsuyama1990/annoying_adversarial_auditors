@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     # Committee Config
     NUM_AUDITORS: int = 3
     REVIEWS_PER_AUDITOR: int = 2
+    MAX_ITERATIONS: int = 3  # Fixed Iteration Mode
 
     paths: PathsConfig = PathsConfig()
     jules: JulesConfig = JulesConfig()
