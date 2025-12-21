@@ -25,8 +25,15 @@ Your goal is to implement and test the features for **CYCLE {{cycle_id}}**.
    - Run tests to ensure they pass.
    - Fix any bugs found during testing.
 
-## Output
-**CRITICAL**: Upon completion, you MUST generate the following file to signal success.
+## Output Rules (STRICT)
+1. You CANNOT create files directly.
+2. Instead, you MUST output the content of the files in the following specific format:
+   FILENAME: path/to/file
+   ```python
+   (content)
+   ```
+
+3. Finally, output `session_report.json` in this format to signal completion.
 
 `dev_documents/CYCLE{{cycle_id}}/session_report.json`
 

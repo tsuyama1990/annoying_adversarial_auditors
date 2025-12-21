@@ -16,8 +16,8 @@ You must generate the following files.
 1. You CANNOT create files directly. You are running in a restricted API mode.
 2. Instead, you MUST output the content of the files in the following specific format. The system will parse your output and create the files for you.
 3. **Format:**
-   FILENAME: path/to/file
-   ```(ext)
+   FILENAME: dev_documents/path/to/file.md
+   ```markdown
    (file content)
    ```
 

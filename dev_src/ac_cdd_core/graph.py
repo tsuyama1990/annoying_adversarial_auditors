@@ -4,13 +4,14 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from .agents import auditor_agent, qa_analyst_agent
+from .agents import qa_analyst_agent
 from .config import settings
 from .domain_models import AuditResult, UatAnalysis
 from .process_runner import ProcessRunner
 from .service_container import ServiceContainer
 from .services.git_ops import GitManager
 from .services.jules_client import JulesClient
+from .services.aider_client import AiderClient
 from .state import CycleState
 from .utils import logger
 
@@ -21,6 +22,7 @@ class GraphBuilder:
     def __init__(self, services: ServiceContainer):
         self.services = services
         self.jules_client = JulesClient()
+        self.aider_client = AiderClient()
         self.git = GitManager()
 
     # --- Architect Graph Nodes ---
@@ -79,12 +81,19 @@ class GraphBuilder:
 
         await self.git.ensure_clean_state()
         branch = await self.git.create_working_branch("feat", f"cycle{cycle_id}")
-        return {"current_phase": "branch_ready", "active_branch": branch}
+        # Initialize iteration count for the new cycle
+        return {
+            "current_phase": "branch_ready",
+            "active_branch": branch,
+            "iteration_count": 0
+        }
 
     async def coder_session_node(self, state: CycleState) -> dict[str, Any]:
-        """Coder Session: Implement and Test Creation."""
+        """Coder Session: Implement and Test Creation (Jules or Aider)."""
         cycle_id = state["cycle_id"]
-        logger.info(f"Phase: Coder Session (Cycle {cycle_id})")
+        iteration_count = state.get("iteration_count", 0) + 1
+
+        logger.info(f"Phase: Coder Session (Cycle {cycle_id}) - Iteration {iteration_count}/{settings.MAX_ITERATIONS}")
 
         template_path = Path(settings.paths.templates) / "CODER_INSTRUCTION.md"
         cycle_dir = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
@@ -92,40 +101,72 @@ class GraphBuilder:
         uat_file = cycle_dir / "UAT.md"
         arch_file = Path(settings.paths.documents_dir) / "SYSTEM_ARCHITECTURE.md"
 
-        audit_feedback = state.get("audit_feedback")
+        # Determine if this is Initial Creation (Jules) or Fix Loop (Aider)
+        if iteration_count > 1:
+            # --- FIX LOOP (Aider) ---
+            logger.info("Mode: Aider Fixer (Refinement/Repair)")
+            audit_feedback = state.get("audit_feedback")
 
-        if audit_feedback:
-            logger.info("Applying Audit Feedback to Coder Instructions.")
-            feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
-            instruction = (
-                f"Your previous implementation FAILED the strict audit.\n"
-                f"You must fix the following CRITICAL ISSUES immediately:\n\n"
-                f"{feedback_text}\n\n"
-                f"Check the existing code, apply fixes, and verify with tests."
-            )
+            # Gather files to fix (simple heuristic: all files in src/ for now, or use git status?)
+            # Ideally Aider knows the repo map, so passing src/ might work if we list files.
+            # Let's list all python files in src/
+            src_files = list(Path(settings.paths.src).rglob("*.py"))
+            files_to_edit = [str(f) for f in src_files]
+
+            # Instruction
+            if audit_feedback:
+                # feedback is a list of strings
+                feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
+                instruction = (
+                    f"You are the Lead Engineer fixing issues found during audit.\n"
+                    f"Fix the following issues strictly:\n\n{feedback_text}\n\n"
+                    f"Verify your changes with tests."
+                )
+            else:
+                 instruction = (
+                    "You are the Lead Engineer. The previous audit passed, but you must now OPTIMIZE the code.\n"
+                    "Refactor for performance, readability, and better typing."
+                )
+
+            try:
+                result = await self.aider_client.run_fix(files=files_to_edit, instruction=instruction)
+                return {
+                    "coder_report": {"tool": "aider", "output": result},
+                    "current_phase": "coder_complete",
+                    "iteration_count": iteration_count
+                }
+            except Exception as e:
+                return {"error": str(e), "current_phase": "coder_failed"}
+
         else:
-            # Prepare standard instruction
+            # --- INITIAL CREATION (Jules) ---
+            logger.info("Mode: Jules Creator (Initial Impl)")
+
             base_instruction = template_path.read_text(encoding="utf-8")
             instruction = base_instruction.replace("{{cycle_id}}", cycle_id)
 
-        files = [str(template_path), str(arch_file)]
-        if spec_file.exists():
-            files.append(str(spec_file))
-        if uat_file.exists():
-            files.append(str(uat_file))
+            files = [str(template_path), str(arch_file)]
+            if spec_file.exists():
+                files.append(str(spec_file))
+            if uat_file.exists():
+                files.append(str(uat_file))
 
-        signal_file = cycle_dir / "session_report.json"
+            signal_file = cycle_dir / "session_report.json"
 
-        try:
-            result = await self.jules_client.run_session(
-                session_id=f"coder-{cycle_id}",
-                prompt=instruction,
-                files=files,
-                completion_signal_file=signal_file
-            )
-            return {"coder_report": result, "current_phase": "coder_complete"}
-        except Exception as e:
-            return {"error": str(e), "current_phase": "coder_failed"}
+            try:
+                result = await self.jules_client.run_session(
+                    session_id=f"coder-{cycle_id}-iter{iteration_count}",
+                    prompt=instruction,
+                    files=files,
+                    completion_signal_file=signal_file
+                )
+                return {
+                    "coder_report": result,
+                    "current_phase": "coder_complete",
+                    "iteration_count": iteration_count
+                }
+            except Exception as e:
+                return {"error": str(e), "current_phase": "coder_failed"}
 
     async def run_tests_node(self, state: CycleState) -> dict[str, Any]:
         """Run tests to capture logs for UAT analysis."""
@@ -176,78 +217,53 @@ class GraphBuilder:
         return {"current_phase": "uat_passed", "error": None}
 
     async def auditor_node(self, state: CycleState) -> dict[str, Any]:
-        """Committee of Auditors Node (Sequential Multi-Audit)."""
-        logger.info("Phase: Committee Auditor")
+        """Strict Auditor Node (Aider)."""
+        logger.info("Phase: Strict Auditor (Aider)")
 
-        auditor_idx = state.get("current_auditor_index", 1)
-        review_count = state.get("current_auditor_review_count", 1)
+        iteration_count = state.get("iteration_count", 1)
 
-        logger.info(
-            f"Auditor #{auditor_idx} (Review {review_count}/{settings.REVIEWS_PER_AUDITOR})"
-        )
+        # 1. Gather Context (Files)
+        # List changed files or all source files?
+        # Aider works best with all context, but we can limit to src/
+        src_files = list(Path(settings.paths.src).rglob("*.py"))
+        files_to_audit = [str(f) for f in src_files]
 
-        # 1. Gather Context
-        runner = ProcessRunner()
-        tree_cmd = [
-            "tree", "-L", "3", "-I",
-            "__pycache__|.git|.venv|node_modules|site-packages|*.egg-info"
-        ]
-        tree_out, _, _ = await runner.run_command(tree_cmd, check=False)
-        diff_out = await self.git.get_diff("main")
-
-        # Load Strict Persona Prompt
+        # Load Instruction
         template_path = Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md"
         if template_path.exists():
-            strict_persona = template_path.read_text(encoding="utf-8")
+            instruction = template_path.read_text(encoding="utf-8")
         else:
-            strict_persona = "Act as a strict code auditor. Reject if any issues found."
+            instruction = "Review the code strictly."
 
-        # Inject Auditor Identity
-        identity_prompt = (
-            f"You are Auditor #{auditor_idx} of {settings.NUM_AUDITORS} in the review committee."
+        instruction += f"\n\n(Iteration {iteration_count})"
+
+        # 2. Run Audit via Aider
+        output = await self.aider_client.run_audit(files=files_to_audit, instruction=instruction)
+
+        logger.info(f"Audit Round {iteration_count} Complete.")
+
+        # We store the raw text output as feedback.
+        # Since we are in a forced loop, we treat all output as 'feedback' to address.
+        # Construct a dummy AuditResult for type compatibility if needed, or just skip it.
+        # State definition says: audit_result: AuditResult | None.
+        # But we also have audit_feedback: list[str] | None.
+
+        # Let's split output by lines for the feedback list
+        feedback_lines = [line.strip() for line in output.split('\n') if line.strip()]
+
+        # Dummy result to satisfy type hints if strictly checked elsewhere
+        dummy_result = AuditResult(
+            is_approved=False, # Always assume false/improve in fixed loop
+            critical_issues=feedback_lines,
+            minor_issues=[],
+            score=0
         )
 
-        prompt = (
-            f"{identity_prompt}\n{strict_persona}\n\n"
-            "=== DIRECTORY STRUCTURE ===\n"
-            f"{tree_out}\n\n"
-            "=== CHANGES (DIFF) ===\n"
-            f"{diff_out}\n\n"
-        )
-
-        # 2. Run Audit
-        result = await auditor_agent.run(prompt)
-        audit_result: AuditResult = result.output
-
-        if audit_result.is_approved:
-            logger.info(f"Auditor #{auditor_idx} APPROVED")
-
-            # Check if committee is finished
-            if auditor_idx >= settings.NUM_AUDITORS:
-                return {
-                    "audit_result": audit_result,
-                    "current_phase": "audit_passed",
-                    "audit_feedback": None
-                }
-            else:
-                # Move to next auditor
-                return {
-                    "audit_result": audit_result,
-                    "current_auditor_index": auditor_idx + 1,
-                    "current_auditor_review_count": 1,
-                    "current_phase": "audit_next_round",
-                    "audit_feedback": None
-                }
-        else:
-            logger.warning(f"Auditor #{auditor_idx} REJECTED")
-            # Stay on same auditor, increment review count
-            # Logic handled in conditional edge to decide loop vs fail
-            return {
-                "audit_result": audit_result,
-                "current_auditor_review_count": review_count + 1,
-                "audit_feedback": audit_result.critical_issues,
-                "current_phase": "audit_failed"
-            }
+        return {
+            "audit_result": dummy_result,
+            "current_phase": "audit_complete",
+            "audit_feedback": feedback_lines
+        }
 
     async def commit_coder_node(self, state: CycleState) -> dict[str, Any]:
         """Commit implementation."""
@@ -309,48 +325,23 @@ class GraphBuilder:
             "uat_evaluate", check_uat, {"auditor": "auditor", "end": END}
         )
 
-        def check_audit(state: CycleState) -> Literal["commit", "auditor", "coder_session", "end"]:
-            phase = state.get("current_phase")
-            # We use the review_count stored in state,
-            # which was already incremented in node if failed
-            review_count = state.get("current_auditor_review_count", 1)
-            # But the node returns the *next* count value.
-            # If rejected, review_count is now (prev + 1).
-            # Max retries means REVIEWS_PER_AUDITOR.
-            # E.g. limit 2.
-            # 1st try (count=1) -> Reject -> returns count=2 -> (2 <= 2) -> coder_session.
-            # 2nd try (count=2) -> Reject -> returns count=3 -> (3 > 2) -> end.
+        def check_audit(state: CycleState) -> Literal["commit", "coder_session"]:
+            current_iter = state.get("iteration_count", 0)
+            max_iter = settings.MAX_ITERATIONS # default: 3
 
-            if phase == "audit_passed":
-                # All auditors approved
-                return "commit"
+            if current_iter < max_iter:
+                logger.info(f"Iteration {current_iter}/{max_iter}: Proceeding to refinement loop.")
+                return "coder_session"
 
-            if phase == "audit_next_round":
-                # Passed current auditor, loop to next
-                return "auditor"
-
-            if phase == "audit_failed":
-                # Check retries (note: review_count is already incremented)
-                # If review_count is 2, it means we are about to try for the 2nd time?
-                # No, review_count tracks "how many times have we TRIED".
-                # If node returns count=2, it means we failed the 1st time, and next will be 2nd.
-                # So if count <= LIMIT, we can retry.
-                if review_count <= settings.REVIEWS_PER_AUDITOR:
-                     return "coder_session"
-                else:
-                     logger.error("Audit Failed: Max retries exceeded for this auditor.")
-                     return "end"
-
-            return "end"
+            logger.info("Max iterations reached. Proceeding to commit.")
+            return "commit"
 
         workflow.add_conditional_edges(
             "auditor",
             check_audit,
             {
                 "commit": "commit",
-                "auditor": "auditor",
                 "coder_session": "coder_session",
-                "end": END,
             },
         )
 
