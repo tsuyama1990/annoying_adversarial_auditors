@@ -22,12 +22,64 @@ def main() -> None:
     pass
 
 
+def check_environment() -> None:
+    """Checks for required tools and API keys."""
+    import os
+    import shutil
+
+    missing_tools = []
+    missing_vars = []
+
+    # 1. Executables
+    required_tools = ["uv", "gh", "git", "jules", "aider"]
+    for tool in required_tools:
+        if not shutil.which(tool):
+            missing_tools.append(tool)
+
+    # 2. Environment Variables
+    # Check strict requirements. Note: OpenRouter is optional if Gemini is used directly,
+    # but we should check at least one LLM key.
+    # Jules requires JULES_API_KEY.
+    required_vars = ["JULES_API_KEY"]
+
+    # We need at least one model provider
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("OPENROUTER_API_KEY"):
+         missing_vars.append("GEMINI_API_KEY (or OPENROUTER_API_KEY)")
+
+    for var in required_vars:
+        if not os.environ.get(var):
+            missing_vars.append(var)
+
+    if missing_tools or missing_vars:
+        console.print(Panel("Environment Check Failed", style="bold red"))
+
+        if missing_tools:
+            console.print("[bold red]Missing Executables:[/bold red]")
+            for tool in missing_tools:
+                console.print(f"- {tool}")
+            console.print("\n[yellow]Please install these tools and ensure they are in your PATH.[/yellow]\n")
+
+        if missing_vars:
+            console.print("[bold red]Missing Environment Variables:[/bold red]")
+            for var in missing_vars:
+                console.print(f"- {var}")
+            console.print("\n[yellow]Please check your .env file.[/yellow]\n")
+
+        # We don't exit strict here to allow users to fix while running,
+        # but we prompt them heavily.
+        if not typer.confirm("Do you want to proceed anyway? (May cause runtime errors)"):
+            raise typer.Exit(code=1)
+    else:
+        console.print("[bold green]✓ Environment Check Passed[/bold green]")
+
 @app.command()
 def init() -> None:
     """
     Initialize the AC-CDD environment.
-    Creates necessary directories and files.
+    Checks environment and creates necessary directories and files.
     """
+    check_environment()
+
     from .services.project import ProjectManager
 
     manager = ProjectManager()

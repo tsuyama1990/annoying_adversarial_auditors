@@ -3,10 +3,8 @@ from typing import Any
 
 from ac_cdd_core.config import settings
 from ac_cdd_core.domain_models import (
-    AuditResult,
     UatAnalysis,
 )
-from ac_cdd_core.tools import semantic_code_search
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
@@ -71,20 +69,7 @@ def get_model(model_name: str) -> Any:
 
 
 # --- Agents ---
-
-# Auditor Agent
-auditor_agent: Agent[Any, AuditResult] = Agent(
-    model=get_model(settings.agents.auditor_model),
-    system_prompt=settings.agents.auditor,
-    # Auditor typically receives file content in prompt, but search helps for cross-file checks
-    tools=[semantic_code_search],
-)
-
-
-@auditor_agent.system_prompt
-def auditor_system_prompt(ctx: RunContext[Any]) -> str:
-    return _get_system_context()
-
+# Auditor Agent is deprecated/removed in favor of AiderClient.
 
 # QA Analyst Agent
 qa_analyst_agent: Agent[Any, UatAnalysis] = Agent(
