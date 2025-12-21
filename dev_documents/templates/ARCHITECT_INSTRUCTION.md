@@ -10,8 +10,17 @@ If you have any good suggestions for the raw requirements, you must suggest them
 - `ALL_SPEC.md`: The raw requirement document.
 
 ## Outputs
-You must generate the following files. Ensure you write them to the disk.
-**DO NOT TOUCH THE OTHER FILES OTHER THAN THE ONES MENTIONED HERE**
+You must generate the following files.
+
+## Output Rules (STRICT)
+1. You CANNOT create files directly. You are running in a restricted API mode.
+2. Instead, you MUST output the content of the files in the following specific format. The system will parse your output and create the files for you.
+3. **Format:**
+   FILENAME: path/to/file
+   ```(ext)
+   (file content)
+   ```
+
 List to be generated:
 - `dev_documents/SYSTEM_ARCHITECTURE.md` (If this file exists, omit the process to generate it.)
 - `dev_documents/CYCLE{xx}/SPEC.md` (For EACH Cycle)
@@ -74,6 +83,8 @@ User Acceptance Testing plan.
 
 ### 4. `dev_documents/plan_status.json`
 **CRITICAL**: This is the completion signal.
+You must output this file using the same `FILENAME:` format as above.
+
 Format:
 ```json
 {

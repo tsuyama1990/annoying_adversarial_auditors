@@ -1,7 +1,7 @@
 import asyncio
 import json
+import re
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +9,6 @@ from ac_cdd_core.config import settings
 from ac_cdd_core.process_runner import ProcessRunner
 from ac_cdd_core.utils import logger
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 console = Console()
 
@@ -22,16 +21,14 @@ class JulesTimeoutError(JulesSessionError):
 class JulesClient:
     """
     Client for interacting with the Jules Autonomous Agent via CLI.
-    Manages session execution, polling for completion, and timeout handling.
+    Manages session execution, processing output, and supervisor loop.
     """
 
     def __init__(self) -> None:
         self.runner = ProcessRunner()
         self.executable = settings.jules.executable
         self.timeout = settings.jules.timeout_seconds
-        self.polling_interval = settings.jules.polling_interval_seconds
-        # Fallback if settings don't have jules_cmd
-        self.cmd = getattr(settings.tools, "jules_cmd", "jules")
+        self.max_loops = 10
         self.console = Console()
 
     async def run_session(
@@ -43,13 +40,13 @@ class JulesClient:
         timeout_override: int | None = None
     ) -> dict[str, Any]:
         """
-        Starts a Jules session and waits for the completion signal file.
+        Starts a Jules session, parses output to create files, and loops until completion.
 
         Args:
             session_id: The unique session identifier.
             prompt: The instruction prompt for the agent.
             files: List of file paths to load into context.
-            completion_signal_file: The file path to poll for completion.
+            completion_signal_file: The file path that signals completion (e.g., plan_status.json).
 
         Returns:
             The content of the completion signal file (parsed JSON).
@@ -61,102 +58,91 @@ class JulesClient:
             except Exception as e:
                 logger.warning(f"Could not delete old signal file {completion_signal_file}: {e}")
 
-        # 2. Construct Chat Command
-        # Use configured executable (might be mock script) or 'jules'
-        cmd_exe = self.executable
+        current_prompt = prompt
+        loop_count = 0
+        max_loops = self.max_loops
 
+        while loop_count < max_loops:
+            loop_count += 1
+            logger.info(f"Jules Session {session_id} - Loop {loop_count}/{max_loops}")
+
+            # 2. Execute Chat Command
+            stdout = await self._execute_chat(
+                session_id,
+                current_prompt,
+                files if loop_count == 1 else []
+            )
+
+            # 3. Parse and Save Files
+            self._parse_and_save(stdout)
+
+            # 4. Check for Completion
+            if completion_signal_file.exists():
+                try:
+                    content = completion_signal_file.read_text(encoding="utf-8")
+                    if content.strip():
+                        return json.loads(content)
+                except Exception as e:
+                    logger.warning(f"Error reading signal file: {e}")
+
+            # 5. Prepare for Next Loop (Continue)
+            logger.info(
+                f"Signal file {completion_signal_file} not found. Requesting continuation..."
+            )
+            current_prompt = (
+                "CONTINUE: plan_status.json not found. "
+                "Please continue outputting the remaining files in the FILENAME format."
+            )
+
+        raise JulesTimeoutError(
+            f"Jules session reached max loops ({max_loops}) "
+            f"without generating {completion_signal_file}"
+        )
+
+    async def _execute_chat(self, session_id: str, prompt: str, files: list[str]) -> str:
+        cmd_exe = self.executable
         cmd = [cmd_exe, "chat", "--session", session_id]
 
         for file_path in files:
-            # Only add existing files to avoid errors
             if Path(file_path).exists():
                 cmd.extend(["--file", str(file_path)])
 
         cmd.append(prompt)
 
-        logger.info(f"Starting Jules Session {session_id}...")
-        logger.debug(f"Command: {' '.join(cmd)}")
-
-        # Execute Command
         try:
-            # Using run_in_executor to avoid blocking event loop
-            await asyncio.get_event_loop().run_in_executor(
+             # Using run_in_executor to avoid blocking event loop
+            result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(  # noqa: S603
                     cmd, check=True, capture_output=True, text=True
                 ),
             )
+            return result.stdout
         except subprocess.CalledProcessError as e:
             logger.error(f"Jules CLI failed: {e.stderr}")
             raise JulesSessionError(f"Jules CLI failed: {e.stderr}") from e
 
-        # 3. Poll for completion
-        result = await self._wait_for_completion(
-            completion_signal_file,
-            timeout=timeout_override or self.timeout,
-            task_name=f"Jules ({session_id})"
-        )
-
-        # 4. Sync Files (Pull)
-        if "mock_jules" not in str(self.executable):
-            await self._sync_files(session_id)
-        else:
-            logger.info("Skipping 'jules fs pull' (Mock mode)")
-
-        return result
-
-    async def _sync_files(self, session_id: str) -> None:
-        """Pulls files from the remote Jules session."""
-        cmd = [self.cmd, "fs", "pull", "--session", session_id]
-        logger.info(f"Syncing files from session {session_id}...")
-        try:
-            # We use ProcessRunner here for async execution
-            stdout, stderr, code = await self.runner.run_command(cmd, check=False)
-            if code != 0:
-                logger.warning(f"File sync failed (non-critical): {stderr}")
-            else:
-                logger.info("File sync complete.")
-        except Exception as e:
-            logger.warning(f"File sync error: {e}")
-
-    async def _wait_for_completion(
-        self, signal_file: Path, timeout: int, task_name: str
-    ) -> dict[str, Any]:
+    def _parse_and_save(self, text: str) -> None:
+        r"""
+        Parses text for FILENAME blocks and writes them to disk.
+        Regex: FILENAME:\s*([^\n]+)\n```\w*\n(.*?)```
         """
-        Polls for the existence of the signal file.
-        """
-        start_time = time.time()
+        pattern = re.compile(r"FILENAME:\s*([^\n]+)\n```\w*\n(.*?)```", re.DOTALL)
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            transient=True,
-            console=self.console
-        ) as progress:
-            task = progress.add_task(f"Waiting for {task_name}...", total=None)
+        matches = pattern.findall(text)
+        if not matches:
+            logger.info("No file blocks found in output.")
+            return
 
-            while True:
-                elapsed = time.time() - start_time
-                if elapsed > timeout:
-                    raise JulesTimeoutError(
-                        f"Jules session timed out after {timeout}s. "
-                        f"Signal file {signal_file} not found."
-                    )
+        for filename, content in matches:
+            filename = filename.strip()
+            file_path = Path(filename)
 
-                if signal_file.exists():
-                    try:
-                        content = signal_file.read_text(encoding="utf-8")
-                        if content.strip():
-                            data = json.loads(content)
-                            progress.update(task, description=f"{task_name} Completed!")
-                            return data  # type: ignore
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            f"Signal file {signal_file} found but contains invalid JSON."
-                            " Retrying..."
-                        )
-                    except Exception as e:
-                        logger.warning(f"Error reading signal file: {e}")
+            # Ensure directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
 
-                await asyncio.sleep(self.polling_interval)
+            try:
+                file_path.write_text(content, encoding="utf-8")
+                logger.info(f"[System] Saved: {filename}")
+            except Exception as e:
+                logger.error(f"Failed to save {filename}: {e}")
