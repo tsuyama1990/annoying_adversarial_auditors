@@ -169,23 +169,38 @@ class GraphBuilder:
 
     async def run_tests_node(self, state: CycleState) -> dict[str, Any]:
         """Run tests to capture logs for UAT analysis."""
-        logger.info("Phase: Run Tests")
+        logger.info("Phase: Run Tests (Sandbox)")
 
-        # Try running tests in sandbox
-        cmd = ["uv", "run", "pytest", "tests/"]
+        # Initialize: Create a new SandboxRunner instance for isolation as requested
+        from .sandbox import SandboxRunner
+
+        # Create a fresh runner to ensure clean state and safe disposal
+        runner = SandboxRunner(cwd="/home/user")
+
         try:
-            stdout, stderr, code = await self.services.sandbox.run_command(cmd, check=False)
+            # Setup Environment: Explicitly ensure dependencies
+            # Although SandboxRunner runs install_cmd on init, we strictly follow instructions
+            # to setup the environment.
+            logger.info("Setting up Sandbox Environment...")
+            await runner.run_command(["pip", "install", "uv", "pytest", "python-dotenv"])
+
+            # Execute Tests
+            cmd = ["uv", "run", "pytest", "tests/"]
+            stdout, stderr, code = await runner.run_command(cmd, check=False)
+
+            logs = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+            return {"test_logs": logs, "test_exit_code": code, "current_phase": "tests_run"}
+
         except Exception as e:
-            # Fallback or error handling if sandbox fails to connect/run
-            logger.error(f"Sandbox test execution failed: {e}")
+            logger.error(f"Sandbox execution failed: {e}")
             return {
                 "test_logs": f"Execution Failed: {e}",
                 "test_exit_code": -1,
                 "current_phase": "tests_failed_exec"
             }
-
-        logs = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-        return {"test_logs": logs, "test_exit_code": code, "current_phase": "tests_run"}
+        finally:
+            # Cleanup: Ensure sandbox resources are released
+            await runner.close()
 
     async def uat_evaluate_node(self, state: CycleState) -> dict[str, Any]:
         """Gemini-based UAT Evaluation."""
