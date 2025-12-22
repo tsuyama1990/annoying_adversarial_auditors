@@ -14,6 +14,7 @@ from .services.jules_client import JulesClient
 from .services.aider_client import AiderClient
 from .state import CycleState
 from .utils import logger
+from .sandbox import SandboxRunner
 
 MAX_AUDIT_RETRIES = 2
 
@@ -24,6 +25,27 @@ class GraphBuilder:
         self.jules_client = JulesClient()
         self.aider_client = AiderClient()
         self.git = GitManager()
+        # Shared sandbox for the lifecycle of the graph execution (approx. one cycle)
+        self.sandbox_runner: SandboxRunner | None = None
+
+    async def _get_shared_sandbox(self) -> SandboxRunner:
+        """
+        Get or initialize the shared sandbox runner.
+        Ensures dependencies are installed once.
+        """
+        if self.sandbox_runner:
+            return self.sandbox_runner
+
+        logger.info("Initializing Shared Sandbox...")
+        # Initialize with default settings
+        self.sandbox_runner = SandboxRunner()
+
+        # Initial setup: Dependencies
+        # We need aider-chat for remote execution + standard test deps
+        deps = ["uv", "pytest", "python-dotenv", "aider-chat"]
+        await self.sandbox_runner.run_command(["pip", "install"] + deps)
+
+        return self.sandbox_runner
 
     # --- Architect Graph Nodes ---
 
@@ -109,15 +131,16 @@ class GraphBuilder:
             logger.info("Mode: Aider Fixer (Refinement/Repair)")
             audit_feedback = state.get("audit_feedback")
 
+            # Get Shared Sandbox (Persistent)
+            runner = await self._get_shared_sandbox()
+
             # Gather files to fix
-            # TODO: In the future, use git status or Aider's repo map to narrow down context.
             src_files = list(Path(settings.paths.src).rglob("*.py"))
             test_files = list(Path(settings.paths.tests).rglob("*.py"))
             files_to_edit = [str(f) for f in src_files + test_files]
 
             # Instruction
             if audit_feedback:
-                # feedback is a list of strings
                 feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
                 instruction = (
                     f"You are the Lead Engineer fixing issues found during audit.\n"
@@ -132,8 +155,9 @@ class GraphBuilder:
                 )
 
             try:
+                # Execute Remote Aider
                 result = await self.aider_client.run_fix(
-                    files=files_to_edit, instruction=instruction
+                    files=files_to_edit, instruction=instruction, runner=runner
                 )
                 return {
                     "coder_report": {"tool": "aider", "output": result},
@@ -177,20 +201,12 @@ class GraphBuilder:
         """Run tests to capture logs for UAT analysis."""
         logger.info("Phase: Run Tests (Sandbox)")
 
-        # Initialize: Create a new SandboxRunner instance for isolation as requested
-        from .sandbox import SandboxRunner
-
-        # Create a fresh runner to ensure clean state and safe disposal
-        runner = SandboxRunner(cwd="/home/user")
-
         try:
-            # Setup Environment: Explicitly ensure dependencies
-            # Although SandboxRunner runs install_cmd on init, we strictly follow instructions
-            # to setup the environment.
-            logger.info("Setting up Sandbox Environment...")
-            await runner.run_command(["pip", "install", "uv", "pytest", "python-dotenv"])
+            # Use Shared Sandbox
+            runner = await self._get_shared_sandbox()
 
             # Execute Tests
+            # Dependencies are already installed in _get_shared_sandbox
             cmd = ["uv", "run", "pytest", "tests/"]
             stdout, stderr, code = await runner.run_command(cmd, check=False)
 
@@ -204,9 +220,6 @@ class GraphBuilder:
                 "test_exit_code": -1,
                 "current_phase": "tests_failed_exec"
             }
-        finally:
-            # Cleanup: Ensure sandbox resources are released
-            await runner.close()
 
     async def uat_evaluate_node(self, state: CycleState) -> dict[str, Any]:
         """Gemini-based UAT Evaluation."""
@@ -249,9 +262,10 @@ class GraphBuilder:
 
         iteration_count = state.get("iteration_count", 1)
 
+        # Get Shared Sandbox (Persistent)
+        runner = await self._get_shared_sandbox()
+
         # 1. Gather Context (Files)
-        # Include both src and tests for context
-        # TODO: In the future, use git status or Aider's repo map to narrow down context.
         src_files = list(Path(settings.paths.src).rglob("*.py"))
         test_files = list(Path(settings.paths.tests).rglob("*.py"))
         files_to_audit = [str(f) for f in src_files + test_files]
@@ -265,13 +279,14 @@ class GraphBuilder:
 
         instruction += f"\n\n(Iteration {iteration_count})"
 
-        # 2. Run Audit via Aider
-        output = await self.aider_client.run_audit(files=files_to_audit, instruction=instruction)
+        # 2. Run Audit via Aider (Remote)
+        output = await self.aider_client.run_audit(
+            files=files_to_audit, instruction=instruction, runner=runner
+        )
 
         logger.info(f"Audit Round {iteration_count} Complete.")
 
         # 3. Parse Output for Structured Report
-        # Look for content between markers
         marker_start = "=== AUDIT REPORT START ==="
         marker_end = "=== AUDIT REPORT END ==="
 
@@ -282,23 +297,19 @@ class GraphBuilder:
                 end_idx = output.index(marker_end)
                 extracted_text = output[start_idx:end_idx].strip()
             except ValueError:
-                # Should not happen given the check, but safe fallback
                 extracted_text = ""
 
         if not extracted_text:
-            # Fallback: take the last 20 lines or full output if short
             lines = output.strip().split("\n")
             if len(lines) > 20:
                 extracted_text = "\n".join(lines[-20:])
             else:
                 extracted_text = output.strip()
 
-        # Split into lines for feedback
         feedback_lines = [line.strip() for line in extracted_text.split("\n") if line.strip()]
 
-        # Dummy result to satisfy type hints if strictly checked elsewhere
         dummy_result = AuditResult(
-            is_approved=False,  # Always assume false/improve in fixed loop
+            is_approved=False,
             critical_issues=feedback_lines,
             minor_issues=[],
             score=0,

@@ -31,7 +31,10 @@ def check_environment() -> None:
     missing_vars = []
 
     # 1. Executables
-    required_tools = ["uv", "gh", "git", "jules", "aider"]
+    # Removing 'aider' and 'jules' from local requirements as we aim for fully remote architecture.
+    # 'git' and 'uv' are still needed for local project management.
+    # 'gh' is optional but recommended for PRs.
+    required_tools = ["uv", "git"]
     for tool in required_tools:
         if not shutil.which(tool):
             missing_tools.append(tool)
