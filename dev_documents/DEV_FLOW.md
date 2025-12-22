@@ -14,8 +14,8 @@ Crucially, all code execution and modification (testing, fixing, auditing) occur
 |---|---|---|---|---|
 | **Architect** | **Google Jules API** | Standard Jules Model | Analyzes requirements (`ALL_SPEC.md`), designs architecture, and generates `SPEC.md` and `UAT.md`. Operates in a text-only mode. | Local (Controller) |
 | **Coder (Initial)** | **Google Jules API** | Standard Jules Model | Performs the **Initial Implementation** (Iteration 0). Scaffolds the project from scratch. | Local (Controller) |
-| **Coder (Fixer)** | **aider (CLI)** | `SMART_MODEL` (e.g., Claude 3.5 Sonnet) | Handles **Refinement & Repair** (Iteration > 0). Uses `aider`'s superior code editing capabilities to apply fixes. | **Remote E2B Sandbox** |
-| **Auditor** | **aider (CLI)** | `FAST_MODEL` (e.g., Gemini 2.0 Flash) | Strictly reviews code in **Read-Only** mode. Leverages `aider`'s Repository Map to understand context and detect issues across the codebase. | **Remote E2B Sandbox** |
+| **Coder (Fixer)** | **aider (CLI)** | `SMART_MODEL` (e.g., Claude 3.5 Sonnet) via OpenRouter (Optional) | Handles **Refinement & Repair** (Iteration > 0). Uses `aider`'s superior code editing capabilities to apply fixes. | **Remote E2B Sandbox** |
+| **Auditor** | **aider (CLI)** | `FAST_MODEL` (e.g., Gemini 2.0 Flash) via OpenRouter (Optional) | Strictly reviews code in **Read-Only** mode. Leverages `aider`'s Repository Map to understand context and detect issues across the codebase. | **Remote E2B Sandbox** |
 
 ## 🔄 Detailed Workflow Logic
 
@@ -110,8 +110,9 @@ The system's behavior is controlled via environment variables and configuration 
 | Variable | Usage | Recommended Value |
 |---|---|---|
 | `JULES_API_KEY` | Authentication for Google Jules API (Architect/Initial Coder). | `required` |
-| `GEMINI_API_KEY` | Primary key for Gemini Models (Auditor/QA). | `required` |
-| `ANTHROPIC_API_KEY` | Primary key for Claude Models (Fixer via Aider). | `required` |
+| `GEMINI_API_KEY` | Primary key for Gemini Models (Auditor/QA). | `optional` (required if not using OpenRouter) |
+| `ANTHROPIC_API_KEY` | Primary key for Claude Models (Fixer via Aider). | `optional` (required if not using OpenRouter) |
+| `OPENROUTER_API_KEY` | Recommended. Unified access to Gemini & Claude models. | `required` (if using OpenRouter) |
 | `E2B_API_KEY` | Key for E2B Sandbox Orchestration. | `required` |
 | `SMART_MODEL` | Model ID for **Fixer** (Aider). High capability required. | `claude-3-5-sonnet-20241022` |
 | `FAST_MODEL` | Model ID for **Auditor** (Aider). Speed & Context required. | `gemini-2.0-flash-exp` |
