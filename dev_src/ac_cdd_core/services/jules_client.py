@@ -1,6 +1,8 @@
 import asyncio
 import json
 import httpx
+import google.auth
+from google.auth.transport.requests import Request as GoogleAuthRequest
 from typing import Any, Optional, Dict
 from pathlib import Path
 
@@ -24,27 +26,46 @@ class JulesClient:
     """
 
     def __init__(self) -> None:
-        self.api_key = settings.JULES_API_KEY
         self.project_id = settings.GCP_PROJECT_ID
         self.region = settings.GCP_REGION
-        # The base URL is constructed based on project and location
-        # Endpoint: POST https://jules.googleapis.com/v1alpha/projects/{project}/locations/{location}/sessions
         self.base_url = "https://jules.googleapis.com/v1alpha"
         self.timeout = settings.jules.timeout_seconds
         self.poll_interval = settings.jules.polling_interval_seconds
         self.console = Console()
         self.git = GitManager()
 
-        if not self.api_key:
-            logger.warning("JULES_API_KEY is not set. JulesClient will fail if called.")
+        # Initialize Authentication (Prefer ADC)
+        try:
+            self.credentials, self.project_id_from_auth = google.auth.default()
+            # If config settings are missing project_id, try to use the one from auth
+            if not self.project_id:
+                self.project_id = self.project_id_from_auth
+        except Exception as e:
+            logger.warning(f"Could not load Google Credentials: {e}. Falling back to API Key if available.")
+            self.credentials = None
+
         if not self.project_id:
-            logger.warning("GCP_PROJECT_ID is not set. JulesClient will fail if called.")
+            logger.warning("GCP_PROJECT_ID is not set and could not be inferred. JulesClient may fail.")
 
     def _get_headers(self) -> Dict[str, str]:
-        return {
+        headers = {
             "Content-Type": "application/json",
-            "X-Goog-Api-Key": self.api_key or "",
         }
+
+        # Token Logic
+        if self.credentials:
+            if not self.credentials.valid:
+                self.credentials.refresh(GoogleAuthRequest())
+            headers["Authorization"] = f"Bearer {self.credentials.token}"
+
+            # Some Google APIs use API Key for quota/billing alongside Auth token
+            if settings.JULES_API_KEY:
+                headers["X-Goog-Api-Key"] = settings.JULES_API_KEY
+        elif settings.JULES_API_KEY:
+             # Fallback to API Key only
+             headers["X-Goog-Api-Key"] = settings.JULES_API_KEY
+
+        return headers
 
     async def run_session(
         self,
@@ -60,22 +81,21 @@ class JulesClient:
         2. Polls for completion.
         3. Returns the PR URL.
         """
-        if not self.api_key or not self.project_id:
-            raise JulesSessionError("Missing JULES_API_KEY or GCP_PROJECT_ID configuration.")
+        if not self.project_id:
+             raise JulesSessionError("Missing GCP_PROJECT_ID configuration.")
+
+        if not self.credentials and not settings.JULES_API_KEY:
+            raise JulesSessionError("Missing Authentication (ADC or JULES_API_KEY).")
 
         # 1. Prepare Source Context
-        # We need to know the repo owner/name and the current branch.
-        # We assume the local git is the source of truth for "where we are".
         try:
             repo_url = await self.git.get_remote_url()
             # Parse owner/repo from URL (e.g., https://github.com/owner/repo.git or git@github.com:owner/repo.git)
-            # This is a basic parser.
             if "github.com" in repo_url:
                 parts = repo_url.replace(".git", "").split("/")
                 repo_name = parts[-1]
                 owner = parts[-2].split(":")[-1] # Handle git@github.com:owner
             else:
-                # Fallback or error
                 raise JulesSessionError(f"Unsupported repository URL format: {repo_url}. Only GitHub is supported.")
 
             branch = await self.git.get_current_branch()
@@ -87,11 +107,6 @@ class JulesClient:
 
         # Construct the specific API endpoint
         url = f"{self.base_url}/projects/{self.project_id}/locations/{self.region}/sessions"
-
-        # Payload construction
-        # Note: The prompt is passed as the initial user message.
-        # Files are not uploaded directly; Jules accesses the repo via sourceContext.
-        # However, we might need to specify which files to look at in the prompt.
 
         # Add file list to prompt if provided, to give context
         full_prompt = prompt
@@ -169,24 +184,14 @@ class JulesClient:
                         data = response.json()
                         state = data.get("state") # e.g., STATE_UNSPECIFIED, ACTIVE, SUCCEEDED, FAILED
 
-                        # Check for Pull Request
-                        # The API should return the PR link in the response, possibly under 'pullRequest'
-                        # or similar field depending on exact API spec.
-                        # Based on prompt: "Status SUCCEEDED or pullRequest field exists"
-
                         pr_info = data.get("pullRequest")
                         if pr_info and pr_info.get("htmlUrl"):
                             status_context.stop()
                             pr_url = pr_info.get("htmlUrl")
                             logger.info(f"Jules Task Completed. PR Created: {pr_url}")
-                            # We return a dict that resembles what the caller might expect loosely,
-                            # but primarily communicating the PR URL.
-                            # The caller (graph.py) currently expects parsed JSON from a file.
-                            # We will need to adapt the caller.
                             return {"pr_url": pr_url, "status": "success", "raw": data}
 
                         if state == "SUCCEEDED":
-                            # If SUCCEEDED but no PR info found yet (maybe in a different field?), return what we have.
                             status_context.stop()
                             logger.info("Jules Session Succeeded.")
                             return {"status": "success", "raw": data}

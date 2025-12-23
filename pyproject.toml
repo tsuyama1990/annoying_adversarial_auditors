@@ -26,6 +26,8 @@ dependencies = [
     "tree-sitter-languages==1.10.2",
     "langgraph-checkpoint-sqlite>=3.0.1",
     "requests>=2.32.5",
+    "httpx>=0.28.1",
+    "google-auth>=2.43.0",
 ]
 
 [tool.uv]

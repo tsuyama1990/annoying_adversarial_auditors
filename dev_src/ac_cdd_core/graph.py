@@ -440,6 +440,14 @@ class GraphBuilder:
         def check_coder(state: CycleState) -> Literal["run_tests", "end"]:
             if state.get("error"):
                 return "end"
+            # If iteration is 1, we just created a PR. We stop here to let user merge.
+            # But the graph logic might expect to continue.
+            # In "Jules Mode" (iter 1), we treat PR creation as success and end.
+            # In "Aider Mode" (iter > 1), we continue to tests.
+            iteration_count = state.get("iteration_count", 1)
+            if iteration_count == 1:
+                return "end" # User must merge PR and restart/pull for next steps.
+
             return "run_tests"
 
         workflow.add_conditional_edges(
