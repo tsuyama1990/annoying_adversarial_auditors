@@ -121,13 +121,21 @@ class GraphBuilder:
                 runner=runner,
             )
 
+            # Since Jules now returns a PR URL (or status dict) instead of file content directly,
+            # we log the result and mark as complete.
+            # Note: The actual 'cycles' plan is inside the PR content.
+            # For the local flow to continue perfectly, we might need to parse the PR desc or file.
+            # For now, we assume the user will review the PR.
+            pr_url = result.get("pr_url", "No URL found")
+            logger.info(f"Architect PR created: {pr_url}")
+
         except Exception as e:
             logger.error(f"Architect session failed: {e}")
             return {"error": str(e), "current_phase": "architect_failed"}
 
         return {
             "current_phase": "architect_complete",
-            "planned_cycles": result.get("cycles", []),
+            # "planned_cycles": result.get("cycles", []), # Deprecated in PR flow
             "error": None,
         }
 
@@ -244,6 +252,10 @@ class GraphBuilder:
                     completion_signal_file=signal_file,
                     runner=runner,
                 )
+
+                pr_url = result.get("pr_url", "No URL found")
+                logger.info(f"Coder PR created: {pr_url}")
+
                 return {
                     "coder_report": result,
                     "current_phase": "coder_complete",

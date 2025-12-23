@@ -25,6 +25,7 @@ dependencies = [
     "tree-sitter==0.21.3",
     "tree-sitter-languages==1.10.2",
     "langgraph-checkpoint-sqlite>=3.0.1",
+    "requests>=2.32.5",
 ]
 
 [tool.uv]
