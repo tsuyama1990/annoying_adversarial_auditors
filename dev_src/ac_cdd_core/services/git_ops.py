@@ -95,3 +95,25 @@ class GitManager:
     async def get_diff(self, target_branch: str = "main") -> str:
         """Returns the diff between HEAD and target branch."""
         return await self._run_git(["diff", f"{target_branch}...HEAD"])
+
+    async def merge_pr(self, pr_url: str) -> None:
+        """
+        Merges a Pull Request using GitHub CLI.
+        """
+        logger.info(f"Merging PR: {pr_url}...")
+        try:
+            await self.runner.run_command(
+                [self.gh_cmd, "pr", "merge", pr_url, "--merge", "--delete-branch"],
+                check=True,
+            )
+            logger.info("PR merged successfully.")
+        except Exception as e:
+            logger.warning(f"Failed to auto-merge PR. Please merge manually. Error: {e}")
+
+    async def pull_changes(self) -> None:
+        """
+        Pulls changes from the remote repository.
+        """
+        logger.info("Pulling latest changes...")
+        await self._run_git(["pull"])
+        logger.info("Changes pulled successfully.")

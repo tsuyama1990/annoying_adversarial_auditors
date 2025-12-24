@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Literal
 import re
@@ -129,6 +130,29 @@ class GraphBuilder:
             pr_url = result.get("pr_url")
             if pr_url:
                 logger.info(f"Architect PR created: {pr_url}")
+
+                # --- Auto-Merge Logic ---
+                try:
+                    logger.info("Attempting to auto-merge PR...")
+                    await self.git.merge_pr(pr_url)
+                    await self.git.pull_changes()
+                    logger.info("PR merged and changes pulled successfully.")
+
+                    # Reload plan status from the now-synced local file
+                    if signal_file.exists():
+                        try:
+                            plan_data = json.loads(signal_file.read_text(encoding="utf-8"))
+                            # Update result to include the planned cycles
+                            result["cycles"] = plan_data.get("cycles", [])
+                        except Exception as e:
+                            logger.warning(f"Failed to parse plan_status.json after merge: {e}")
+
+                except Exception as e:
+                    logger.warning(
+                        f"Auto-merge failed. Please merge manually via the URL above. Error: {e}"
+                    )
+                # ------------------------
+
             else:
                 msg = (
                     "Jules session finished but NO Pull Request was created.\n"
@@ -146,7 +170,7 @@ class GraphBuilder:
 
         return {
             "current_phase": "architect_complete",
-            # "planned_cycles": result.get("cycles", []), # Deprecated in PR flow
+            "planned_cycles": result.get("cycles", []),
             "error": None,
         }
 
