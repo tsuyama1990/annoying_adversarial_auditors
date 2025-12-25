@@ -1,132 +1,198 @@
-# Cycle 05 Specification: User Interface and Finalisation
+# Cycle 05: Finalisation - Specification Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To polish the MLIP-AutoPipe into a distributable, user-friendly tool by developing a clean command-line interface (CLI), comprehensive documentation, and robust packaging.
+**Cycle:** 05
+**Title:** User Interface, Optimisation, and Packaging
 
 ## 1. Summary
 
-Cycle 05 is the final phase of development, focusing on usability, accessibility, and professional polish. While the preceding cycles have built a powerful and autonomous engine, this cycle ensures that the engine is controllable, understandable, and easily deployable by the target audience of computational materials scientists. The primary goal is to move beyond a collection of developer-run scripts and create a polished, cohesive software package. This involves three main pillars of work: creating a user-friendly Command-Line Interface (CLI), writing comprehensive documentation, and packaging the entire project for easy distribution and installation.
+This document provides the detailed technical specification for the fifth and final development cycle of the MLIP-AutoPipe project. With the core autonomous functionality now complete, this cycle focuses on turning the powerful backend into a polished, usable, and robust tool for the end-user, the computational materials scientist. The primary objectives are threefold: 1) to create a clean, professional, and user-friendly command-line interface (CLI); 2) to conduct performance profiling and optimization to ensure the tool is efficient; and 3) to package the entire application for easy distribution and installation, complete with comprehensive user documentation. This cycle is less about adding new scientific features and more about the crucial software engineering work required to make a complex system accessible, reliable, and maintainable.
 
-The first major task is to develop a formal CLI using a modern framework like `Typer` or `Click`. This will provide a single, consistent entry point for all of the pipeline's functions. The CLI will feature clear commands (e.g., `mlip-pipe run`, `mlip-pipe status`), intuitive options, and helpful, automatically generated help messages. Crucially, it will include rich console output, such as progress bars for long-running tasks, status indicators, and well-formatted summaries of results. This moves the user experience from watching raw log files to interacting with a professional piece of software.
+The first major task is the development of a high-quality CLI. The current interaction method, running specific Python scripts, is suitable for development but not for a finished product. We will build a proper CLI using a modern framework like `Typer` or `Click`. This will provide a single, clear entry point (`mlip-pipe`) with well-defined commands (e.g., `run`, `analyze`), arguments, and options. The CLI will include features like progress bars for long-running tasks, different levels of verbosity controlled by flags (e.g., `-v`, `--verbose`), and robust error handling that provides clear, actionable feedback to the user instead of raw Python tracebacks. This professional interface is essential for user adoption and for making the tool feel like a mature piece of scientific software.
 
-The second pillar is documentation. We will create a comprehensive user guide that explains not just *how* to use the software, but also the key concepts behind it. This will include tutorials with step-by-step examples for common use cases (e.g., generating a potential for an alloy, a molecule), a detailed API reference for developers who may wish to extend the tool, and a clear explanation of the `input.yaml` configuration file.
-
-Finally, we will finalize the project's packaging for distribution via the Python Package Index (PyPI). This involves ensuring the `pyproject.toml` file is complete with all metadata, dependencies are correctly specified, and the package can be reliably built. The goal is to make installation as simple as `pip install mlip-autopipe` or `uv pip install mlip-autopipe`, allowing users to get started with the tool in minutes. This cycle will culminate in a series of end-to-end "golden" tests to ensure the final, packaged application is robust, reproducible, and ready for its first official release.
+The second focus is performance. The pipeline, particularly the exploration module (Module B) and the simulation engine (Module E), involves intensive computation and data processing. This task involves a systematic profiling of the entire workflow to identify any performance bottlenecks. Using tools like `cProfile` and `py-spy`, we will analyze CPU and memory usage to find inefficient code sections—for example, slow loops in data processing or suboptimal data structures. We will then refactor these sections, applying techniques like vectorization with NumPy, further optimization with Numba, or more efficient I/O handling, to ensure the application runs as fast as possible. The final part of this cycle is dedicated to documentation and packaging. We will write a comprehensive user guide, including a "Getting Started" tutorial, detailed explanations of the `input.yaml` file format, and examples. The entire project will then be configured for packaging using standard Python tools and its `pyproject.toml` file, allowing a user to install it easily and reliably on their system with a single command: `pip install mlip-autopipec`.
 
 ## 2. System Architecture
 
-The architecture for Cycle 05 primarily involves adding a new presentation layer (the CLI) on top of the existing backend and formalizing the project's structure for distribution.
+The architecture in Cycle 05 does not introduce new computational modules, but rather adds a crucial "presentation layer" on top of the existing system: the Command-Line Interface. This layer serves as the sole entry point for the user and acts as a user-friendly façade for the powerful but complex `WorkflowOrchestrator` developed in the previous cycles.
 
-**Component Breakdown:**
+The final user interaction flow is as follows:
+1.  **User Command:** The user types a command in their terminal, e.g., `mlip-pipe run --verbose input.yaml`.
+2.  **CLI Application:** The `Typer`/`Click` application parses this command. It validates the arguments (e.g., does `input.yaml` exist?) and maps the command and options to a specific function call.
+3.  **Orchestrator Invocation:** The CLI application instantiates and configures the main `WorkflowOrchestrator`. It passes the verbosity level to the orchestrator's logging configuration and provides the path to the `input.yaml` file.
+4.  **Backend Execution:** The `WorkflowOrchestrator` takes over and executes the entire active learning pipeline, as developed in Cycles 01-04. The orchestrator's logging and progress reporting are now displayed to the user through the CLI's output.
+5.  **Exit and Status:** Once the orchestrator completes its run, it returns a success or failure status to the CLI application, which then exits with an appropriate status code, allowing it to be used in automated scripting.
 
-*   **Command-Line Interface (`main.py`):** This will be the main entry point for the application.
-    *   **Framework:** A library like `Typer` will be used to build a structured CLI application.
-    *   **Commands:**
-        *   `mlip-pipe run [INPUT_YAML]`: The primary command to execute the full pipeline. It will instantiate and run the `Orchestrator`.
-        *   `mlip-pipe status [RUN_ID]`: A command to inspect the state of a completed or ongoing run, reading from the database and state files.
-        *   `mlip-pipe package-info`: A command to provide information about the package and its dependencies.
-    *   **User Experience:** The CLI will use a library like `rich` to provide an enhanced console experience. This includes:
-        *   **Progress Bars:** Displayed for DFT calculations, MD simulations, and training epochs.
-        *   **Styled Output:** Using colors and formatting to clearly distinguish between informational messages, warnings, and errors.
-        *   **Summary Tables:** Displaying key results in a clean, tabular format.
+This architecture cleanly separates the user interface logic from the core scientific workflow logic. The `WorkflowOrchestrator` remains unaware of the CLI, which ensures that the core engine can still be imported and used as a library in other Python scripts if needed, providing maximum flexibility.
 
-*   **Packaging (`pyproject.toml`):** The `pyproject.toml` will be finalized to make the project installable.
-    *   **Entry Point:** An entry point will be defined, e.g., `[project.scripts] mlip-pipe = "mlip_pipe.main:app"`, which creates the `mlip-pipe` executable upon installation.
-    *   **Dependencies:** All dependencies, including those for external tools that might need to be compiled (like LAMMPS, if bundled), will be clearly specified. Optional dependencies for different MLIP frameworks can be defined.
-    *   **Metadata:** All required package metadata (author, license, description, etc.) will be completed for uploading to PyPI.
+**Architectural Placement:**
 
-*   **Documentation (`docs/`):** A new top-level `docs/` directory will be created.
-    *   **Generator:** A static site generator like Sphinx or MkDocs will be used.
-    *   **Content:**
-        *   `index.md`: Project overview.
-        *   `installation.md`: Clear, simple installation instructions.
-        *   `tutorial.md`: A step-by-step guide for a new user.
-        *   `configuration.md`: A detailed reference for the `input.yaml` file.
-        *   `api/`: Auto-generated API documentation for the source code.
+```mermaid
+graph TD
+    A[User @ Terminal] --1. types command--> B[CLI Application (Typer/Click)];
+    B --2. Parses & Validates--> C[Instantiate & Configure];
+    C --3. Invokes--> D{Workflow Orchestrator (from Cycle 04)};
+    D --4. Executes Entire Backend Pipeline--> E[Core Modules A-E];
+    E --5. Reports Progress/Logs--> D;
+    D --6. Returns Status--> B;
+    B --7. Displays Output & Exits--> A;
 
-The existing backend (Orchestrator, Modules A-E) will remain largely unchanged, but the `Orchestrator` will be modified to accept a callback function for reporting progress, allowing the CLI to be decoupled from the core logic.
+    subgraph "New in Cycle 05"
+        B;
+    end
+
+    subgraph "Existing System"
+        D; E;
+    end
+
+    style B fill:#9f9,stroke:#333,stroke-width:2px
+```
+
+The documentation and packaging aspects of this cycle are meta-level architectural concerns. They define how the software is presented to the user and how its components are bundled together for distribution, but do not alter the runtime interaction between the core modules.
 
 ## 3. Design Architecture
 
-The design focuses on the separation of concerns between the core logic and the user interface.
+The design for Cycle 05 focuses on the user-facing aspects of the application.
 
-**Key Classes and APIs:**
+**File and Class Structure:**
 
-*   **`mlip_pipe.main.app`**
-    *   This will be the `Typer` application object.
-    *   `@app.command()`
-        `run(input_file: Path)`: The function that implements the `run` command. It will be responsible for:
-        1.  Parsing the command-line arguments.
-        2.  Creating a `Rich` console object.
-        3.  Creating a progress reporting callback function.
-        4.  Instantiating the `Orchestrator`.
-        5.  Passing the callback to the `Orchestrator`.
-        6.  Calling the `Orchestrator`'s main execution method.
-        7.  Handling any exceptions and printing user-friendly error messages to the console.
+```
+mlip_autopipec/
+├── cli.py                     # The main Typer/Click application
+├── orchestrator_cycle04.py    # (Final orchestrator)
+├── ...                        # All other modules and utils
+└── pyproject.toml             # (Heavily modified for packaging)
 
-*   **`mlip_pipe.orchestrator.Orchestrator`**
-    *   `__init__(self, config, progress_callback: Callable = None)`: The constructor will be updated to accept an optional callback function.
-    *   Inside its long-running loops (e.g., iterating over structures for DFT labelling), the `Orchestrator` will call this callback to report progress, e.g., `self.progress_callback({"step": "DFT Labelling", "progress": i+1, "total": n})`. This allows the CLI to update a progress bar without the core logic needing to know anything about the console.
+docs/
+├── source/
+│   ├── conf.py                # Sphinx configuration
+│   ├── index.rst              # Main page
+│   ├── tutorial.rst           # Getting started guide
+│   └── input_format.rst       # Detailed config explanation
+└── ...
+```
 
-*   **`mlip_pipe.ui.progress.RichProgressReporter`**
-    *   A new helper class that encapsulates the logic for displaying progress using the `rich` library. The `run` command function will instantiate this class and pass its `update` method as the callback to the `Orchestrator`.
+**Class and API Definitions:**
+
+1.  **`cli.py`**: This file will contain the entire CLI definition. `Typer` is preferred for its modern, type-hint-based design.
+    ```python
+    import typer
+    from typing_extensions import Annotated
+    import logging
+
+    # Rich can be used for better formatting
+    from rich.console import Console
+
+    app = typer.Typer()
+    console = Console()
+
+    @app.command()
+    def run(
+        config_file: Annotated[typer.Path(exists=True), typer.Argument(help="Path to the minimal input.yaml file.")],
+        verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable detailed logging output.")] = False
+    ):
+        """
+        Run the full MLIP-AutoPipe workflow.
+        """
+        level = logging.DEBUG if verbose else logging.INFO
+        # Configure logging...
+
+        try:
+            console.print("[bold green]Starting MLIP-AutoPipe workflow...[/bold green]")
+            # orchestrator = WorkflowOrchestrator(...)
+            # orchestrator.execute()
+            console.print("[bold green]Workflow completed successfully![/bold green]")
+        except Exception as e:
+            console.print(f"[bold red]An error occurred: {e}[/bold red]")
+            raise typer.Exit(code=1)
+
+    @app.command()
+    def analyze(...):
+        """(Future extension) Analyze results from a completed run."""
+
+    if __name__ == "__main__":
+        app()
+    ```
+
+2.  **`pyproject.toml` Configuration**: This file will be significantly expanded to support packaging and CLI entry points.
+    ```toml
+    [project]
+    name = "mlip-autopipec"
+    version = "1.0.0"
+    # ... other metadata ...
+    dependencies = [
+        "ase", "typer[all]", "rich", ...
+    ]
+
+    [project.scripts]
+    mlip-pipe = "mlip_autopipec.cli:app"
+
+    [tool.setuptools.packages.find]
+    where = ["."]
+    ```
+
+**Performance Profiling Design:**
+The optimization process will be systematic. We will use `cProfile` to get a high-level overview of which functions are taking the most time.
+```bash
+python -m cProfile -o profile.pstats -m mlip_autopipec.cli run input.yaml
+```
+Then, we will use a visualizer like `snakeviz` to analyze `profile.pstats`. For more granular, line-by-line analysis of CPU-bound functions (like the descriptor calculations), we can use `line_profiler`. Any identified bottlenecks will be refactored for better performance.
 
 ## 4. Implementation Approach
 
-1.  **CLI Scaffolding:**
-    *   Choose a CLI framework (`Typer` is a good choice for its simplicity and features).
-    *   Set up the basic `main.py` with the `Typer` app object and the main `run` command.
-    *   Define the entry point in `pyproject.toml` and test the installation locally using `uv pip install -e .`. Verify that the `mlip-pipe` command becomes available in the shell.
+The implementation will be done in three parallel streams: CLI development, documentation writing, and performance optimization.
 
-2.  **Progress Reporting Integration:**
-    *   Modify the `Orchestrator`'s constructor and internal methods to accept and use the progress callback as designed. This is a small but important change that decouples the backend from the UI.
-    *   Implement the `RichProgressReporter` class. This class will manage the `rich.progress.Progress` object, defining columns for description, percentage, and ETA. Its `update` method will parse the dictionary from the callback and update the appropriate progress bar.
+**Step 1: CLI Development**
+1.  **Framework Setup:** Choose and install the CLI framework (`Typer` is recommended). Create the `cli.py` file and define the main `app` object and the primary `run` command.
+2.  **Orchestrator Integration:** In the `run` command, add the code to instantiate and execute the `WorkflowOrchestrator`.
+3.  **Argument Parsing and Logging:** Implement the `--verbose` flag and connect it to Python's `logging` module to control the level of detail in the console output.
+4.  **User Feedback:** Integrate the `rich` library to add progress bars for long loops (like structure labelling) and to format output with colors for better readability (e.g., green for success, red for errors).
+5.  **Error Handling:** Wrap the main orchestrator call in a `try...except` block to catch any exceptions. Instead of letting the program crash, this block will print a user-friendly error message and exit with a non-zero status code.
 
-3.  **Enhance CLI Output:**
-    *   Integrate the `RichProgressReporter` into the `run` command function.
-    *   Add styled print statements (`rich.print`) for key events, such as "[green]Pipeline completed successfully![/green]".
-    *   Implement robust exception handling. A top-level `try...except` block in the `run` command will catch any exceptions from the backend, log the full traceback to a file for debugging, and print a simple, helpful error message to the user.
+**Step 2: Documentation**
+1.  **Tool Selection:** Set up `Sphinx` or `MkDocs` in the `docs/` directory. Sphinx is more powerful, while MkDocs is simpler.
+2.  **Getting Started Guide:** Write a `tutorial.rst` page. This will be a step-by-step guide that walks a new user through installing the package and running their first simple example (e.g., for bulk Silicon).
+3.  **Configuration Reference:** Write the `input_format.rst` page. This will be a detailed reference explaining every possible key and section in the `input.yaml` file, what they do, and their allowed values.
+4.  **API Docs (Optional):** Configure Sphinx's `autodoc` extension to automatically generate documentation from the code's docstrings, creating a reference for advanced users or developers who might want to extend the tool.
 
-4.  **Documentation:**
-    *   Set up the chosen documentation generator (e.g., `mkdocs`).
-    *   Write the main content pages: Installation, Tutorial, Configuration Reference. The tutorial should be a complete, runnable example.
-    *   Configure the tool to auto-generate API documentation from the code's docstrings. Ensure all public classes and methods have clear, well-formatted docstrings.
+**Step 3: Performance Optimization**
+1.  **Create Benchmark Case:** Prepare a standard `input.yaml` and test system that is complex enough to be representative but fast enough to be run repeatedly. This will be our benchmark.
+2.  **Profile:** Run the profiler (`cProfile`) on the benchmark case and save the results.
+3.  **Analyze:** Use `snakeviz` to visualize the profiling results and identify the top 3-5 most time-consuming functions in the application.
+4.  **Refactor:** For each identified bottleneck, analyze the code and apply appropriate optimizations. For example:
+    *   If a loop in Python is slow, try to rewrite it using vectorized NumPy operations.
+    *   If NumPy is already used but it's still slow, rewrite the function as a Numba-jitted function.
+    *   If I/O is slow, check for opportunities to read/write data in larger chunks.
+5.  **Re-benchmark:** After each significant refactoring, re-run the profiler on the benchmark case to confirm that the change has resulted in a measurable performance improvement.
 
-5.  **Packaging and Finalisation:**
-    *   Thoroughly review and complete all sections of `pyproject.toml`.
-    *   Perform a clean build of the package (`uv build`).
-    *   Test the installation of the built wheel in a clean, fresh virtual environment to ensure all dependencies are correctly specified and the entry point script works.
-
-6.  **"Golden" End-to-End Tests:**
-    *   Create a final set of tests that run the full pipeline via the CLI command itself, using `subprocess.run(['mlip-pipe', 'run', ...])`.
-    *   These tests will use a fixed `input.yaml` and a fixed random seed.
-    *   The test will assert that the command completes with exit code 0.
-    *   Most importantly, it will assert that the final trained potential file is bit-for-bit identical to a "golden" reference file stored in the repository. This provides the ultimate guarantee of reproducibility.
+**Step 4: Packaging**
+1.  **Update `pyproject.toml`:** Finalize the `pyproject.toml` file. This includes defining the project name, version, dependencies, and, most importantly, the `[project.scripts]` entry point to create the `mlip-pipe` command.
+2.  **Build and Test Installation:** Run `pip install .` in the project root to test the local installation. This should make the `mlip-pipe` command available in the environment. Run the command to ensure it works.
+3.  **Create Source Distribution:** Run the build command (e.g., `python -m build`) to create the final, distributable package files (`.tar.gz` and `.whl`).
 
 ## 5. Test Strategy
 
-Testing for Cycle 05 focuses on the user-facing aspects of the application and the overall package integrity.
+Testing in Cycle 05 focuses on the new user-facing layer and the overall robustness of the final application.
 
-**Unit Testing Approach (Min 300 words):**
-*   **CLI Tests:** We will use a framework like `pytest-click` (which works with Typer) to test the CLI in isolation. We will not run the full pipeline in these tests.
-    *   We will mock the `Orchestrator` class.
-    *   **Test Command Invocation:** We will invoke the `run` command with a path to a test `input.yaml`. We will then assert that the `Orchestrator` was instantiated and that its `run_full_pipeline` method was called exactly once.
-    *   **Test Argument Parsing:** We will test that file paths are correctly passed from the command line to the orchestrator.
-    *   **Test Error Handling:** We will configure the mocked `Orchestrator` to raise an exception. We will then run the `run` command and capture its output, asserting that a user-friendly error message was printed to the console and that the exit code was non-zero.
-    *   **Test Progress Callback:** We can use a mock callback function to assert that the `Orchestrator` is called with the progress reporter, and we can even simulate the `Orchestrator` calling the callback to ensure the UI layer would respond.
+**Unit Testing:**
 
-*   **Documentation Tests:** The code examples in the documentation (especially in the tutorial) will be written as `doctest`s. This means the documentation generator or a testing plugin can automatically run the code in the documentation and verify that its output matches what is written. This ensures the documentation never becomes outdated or contains incorrect examples.
+*   **CLI Tests:** The CLI will be tested using the framework's recommended testing tools (e.g., `Typer`'s `CliRunner`).
+    *   Test that calling `mlip-pipe run` with a non-existent file path correctly exits with an error message.
+    *   Test that the `--verbose` flag correctly sets the logging level.
+    *   Test that `mlip-pipe --help` displays the help message and exits successfully.
+    *   We will use `pytest-mock` to mock the `WorkflowOrchestrator` itself, so we can test the CLI's argument parsing and error handling logic in isolation without running the entire backend.
 
-**Integration Testing Approach (Min 300 words):**
-The primary integration tests for this cycle are the "golden" tests, which provide the highest level of confidence in the final, packaged application.
+**Integration Testing:**
 
-*   **`test_golden_run_alloy`:**
-    1.  **Setup:** The test will have a directory containing a specific `input.yaml` for an alloy (e.g., SiGe) and a "golden" reference potential file that was generated from a previous, trusted run with the same input and a fixed random seed.
-    2.  **Execution:** The test will use `subprocess.run` to execute the packaged CLI command: `mlip-pipe run path/to/sige_input.yaml --seed 12345`.
-    3.  **Assertions:**
-        *   Assert that the command completes with an exit code of 0.
-        *   Assert that a new potential file is created in the output directory.
-        *   Compare the newly generated potential file with the "golden" reference file. The test will perform a binary comparison (e.g., comparing the SHA256 hashes of the files). The hashes must be identical. This proves that the entire pipeline, from parsing input to the final floating-point operations of the training, is perfectly reproducible.
+*   **Installation Test:** A test script will be created (potentially for a CI/CD pipeline) that:
+    1.  Creates a clean virtual environment.
+    2.  Installs the packaged `.whl` file into it.
+    3.  Runs `mlip-pipe --help` and checks the output.
+    4.  Runs a very short E2E test case using the installed `mlip-pipe` command.
+    *   This test validates that the packaging and installation process is working correctly.
 
-*   **Installation Test:** A separate test, likely run only in the CI/CD pipeline, will create a completely empty virtual environment, install the application from the built wheel using `uv pip install`, and then run the `mlip-pipe --help` command. This verifies that the installation process is sound and that the entry point script is correctly installed and executable.
+**End-to-End (E2E) Testing:**
+
+*   **Final Validation Suite:** The existing E2E tests from previous cycles will be refactored to be run via the new `mlip-pipe` CLI command instead of by calling the Python scripts directly. This will serve as the final validation for the entire integrated application. We will run the "successful alloy" and "successful molecule" test cases from the CLI to ensure no regressions have been introduced.
+*   **Documentation Test:** A human-driven test where a developer (other than the one who wrote the docs) attempts to follow the `tutorial.rst` from scratch on a clean machine. Their ability to successfully complete the tutorial without confusion will be the measure of the documentation's quality.

@@ -1,125 +1,213 @@
-# Cycle 01 Specification: The Core Engine (Foundation)
+# Cycle 01: Core Engine - Specification Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To establish the project's foundational architecture and implement the minimum viable pipeline: the ability to take a predefined set of atomic structures, label them using an automated DFT engine, and train a basic Machine Learning Interatomic Potential (MLIP).
+**Cycle:** 01
+**Title:** Core Engine: Automated Labelling and Delta Learning Training
 
 ## 1. Summary
 
-Cycle 01 lays the critical groundwork for the entire MLIP-AutoPipe project. The primary objective of this cycle is to construct the backbone of the pipeline, focusing on the two most fundamental components: the automated DFT labelling engine and the MLIP training engine. This cycle intentionally omits the complexities of automated structure generation and active learning to concentrate on creating a robust, reliable, and verifiable core. We will establish the modern Python project structure using `pyproject.toml` and the `uv` toolchain, which will ensure a reproducible and high-performance development environment from day one.
+This document provides the detailed technical specification for the first development cycle of the MLIP-AutoPipe project. Cycle 01 is arguably the most critical phase, as it lays the foundational bedrock upon which the entire autonomous system will be built. The primary objective of this cycle is to develop the "Core Engine," which consists of two tightly integrated components: the automated DFT **Labelling Engine (Module C)** and the physics-aware **Training Engine (Module D)**. The successful completion of this cycle will yield a system capable of performing the most fundamental task in any MLIP workflow: taking a given atomic structure, calculating its properties (energy, forces, stress) using a first-principles method, and then using that data to train a machine learning model. While this initial version will lack the sophisticated automation and active learning loops of the final product, it will serve as the essential proof-of-concept, demonstrating the viability of the core software architecture and the integration of the key external simulation packages, Quantum Espresso and a modern MLIP framework.
 
-The core deliverable for this cycle is a linear, manually-driven workflow. A developer will be able to provide a directory of atomic structures in a standard format (e.g., CIF files). The system will then process each of these files, invoking an external Quantum Espresso (QE) engine to perform single-point DFT calculations. The implementation will abstract away the complexities of this process, automatically generating the correct QE input files, executing the calculation, parsing the resulting output files to extract the essential labels (energy, forces, stresses), and storing these labelled structures in a persistent ASE database.
+The scope of this cycle is deliberately focused and pragmatic. For the Labelling Engine, the goal is to create a robust and reliable Python wrapper for the Quantum Espresso `pw.x` executable. This is more than a simple command-line call; the engine must be capable of taking a standardized atomic structure representation (an `ase.Atoms` object) and automatically generating a syntactically correct and physically sensible QE input file. This involves programmatically setting crucial parameters like cell dimensions, atomic positions, pseudopotentials, and initial convergence settings. After executing the calculation, the engine must then parse the often-verbose QE output to precisely extract the required labels—total energy, atomic forces, and virial stress—and store them in a structured, accessible format within our central ASE database. Error handling is also a key consideration; the engine must be able to detect and report common DFT calculation failures, such as non-convergence of the self-consistent field (SCF) loop.
 
-Following the labelling stage, the system will feed this newly created dataset into the training engine. This engine will be responsible for training a modern MLIP, such as one based on the Atomic Cluster Expansion (ACE) or MACE framework. A key feature to be implemented from the outset is the "Delta Learning" strategy. This technique involves training the model to predict the residual between the high-accuracy DFT results and a lower-fidelity but physically sound baseline potential (like the Ziegler-Biersack-Littmark potential for repulsive interactions). This ensures that the resulting MLIP behaves physically reasonably even in regions where training data is sparse, preventing catastrophic failures like atomic collapse. By the end of this cycle, we will have a functional, albeit not yet autonomous, pipeline that proves the viability of our core components and provides a solid foundation upon which all future automation will be built.
+The second part of the core, the Training Engine, will focus on implementing a state-of-the-art MLIP training pipeline. A key requirement from the system architecture is the use of **Delta Learning**. This is a crucial design choice for ensuring the physical realism of our potentials. Instead of learning the total energy and forces directly, the MLIP will be trained to predict the *difference* between the true DFT values and the values calculated from a simpler, analytical baseline potential (e.g., a combination of Lennard-Jones and ZBL potentials). This approach embeds fundamental physical constraints directly into the model, ensuring, for instance, that atoms repel strongly at very short distances, a behavior that is often difficult for ML models to learn from sparse data alone. This cycle will therefore involve integrating a framework like MACE or NequIP and building the data pipeline that feeds it not just the DFT labels, but the calculated residuals required for the Delta Learning process. The final output of this cycle will be a command-line tool that, while manually operated, successfully demonstrates the end-to-end process of labelling and training for a single atomic configuration, validating our core technological choices and architectural design.
 
 ## 2. System Architecture
 
-The architecture for Cycle 01 is a simplified, linear subset of the final system architecture. It consists of a central orchestrator that directs data flow between the Labelling Engine, the ASE Database, and the Training Engine. User interaction is manual at this stage, limited to providing the initial, unlabelled structures.
+In the context of Cycle 01, we are implementing the foundational data processing pipeline of the overall MLIP-AutoPipe system. While the grander orchestration and feedback loops are deferred to later cycles, the architectural principles of modularity and data-centric design are paramount from the very beginning. The system at this stage can be visualized as a linear data flow, starting with a user-provided atomic structure and ending with a trained MLIP. This workflow is the nascent form of the final system's active learning loop. The central data repository, the ASE Database, is established in this cycle and serves as the connective tissue between the two core modules. Every piece of data—the input structure, the DFT parameters, the calculated labels, and the final model's metadata—is recorded in this database, fulfilling our core requirement for provenance and reproducibility from day one.
 
-**Component Breakdown:**
+The two primary modules, the Labelling Engine (Module C) and the Training Engine (Module D), are designed as distinct, loosely-coupled services that communicate via the central database. This separation is a critical architectural choice. It means that the Labelling Engine's sole responsibility is to accurately perform and record DFT calculations, without any knowledge of what the data will be used for. Similarly, the Training Engine's responsibility is to train a model from a given dataset, without concern for how that data was generated. This decoupling allows for future flexibility; for example, the Quantum Espresso-based Labelling Engine could be swapped for a VASP- or CP2K-based one with zero required changes to the Training Engine.
 
-*   **Project Structure:** The project will be set up as a standard Python package. All source code will reside in `src/mlip_pipe/`. Dependencies, project metadata, and scripts will be managed via a central `pyproject.toml` file. The `uv` tool will be used for all environment and package management tasks, ensuring speed and consistency.
-*   **Orchestrator (`orchestrator.py`):** A primary `Orchestrator` class will be created to manage the sequence of operations. For this cycle, its logic will be straightforward:
-    1.  Accept a path to a directory of input structures.
-    2.  Iterate through each structure.
-    3.  For each structure, invoke the Labelling Engine.
-    4.  Store the returned, labelled structure in the ASE Database.
-    5.  Once all structures are processed, retrieve the complete dataset from the database.
-    6.  Invoke the Training Engine with this dataset.
-    7.  Save the resulting trained potential to a specified output file.
-*   **ASE Database Utility (`utils/ase_db.py`):** A dedicated utility module will provide a simple, high-level interface for interacting with an ASE (Atomic Simulation Environment) database, which will likely be a simple SQLite file for this cycle. It will provide methods like `connect(db_path)`, `write_atoms(atoms_object)`, and `get_all_atoms()`. This abstracts the database logic and ensures data is stored in a structured, queryable format.
-*   **Module C: Labelling Engine (`modules/c_labelling_engine.py`):** This is a cornerstone of the cycle. The `QuantumEspressoRunner` class will encapsulate all logic for interacting with QE. It will not execute QE directly but will generate the command-line arguments to run it as a subprocess. Its key responsibility is the dynamic generation of QE input files based on an incoming ASE `Atoms` object. It will automatically determine atomic species, positions, and cell parameters. Crucially, it will implement a robust parameter selection scheme based on the SSSP (Standard Solid State Pseudopotentials) protocol, which will allow it to automatically choose appropriate pseudopotentials and plane-wave cutoff energies. After execution, it must be capable of parsing the plain-text QE output to find and extract the final total energy, the forces on each atom, and the stress tensor, attaching this information to the original `Atoms` object before returning it.
-*   **Module D: Training Engine (`modules/d_training_engine.py`):** This module will house the `Trainer` class. It will be initialized with the configuration for a specific MLIP framework (e.g., MACE). Its main method, `train(dataset)`, will take the list of labelled ASE `Atoms` objects from the database. It will perform the necessary data preparation and then use the underlying framework's library to fit the potential. The implementation of Delta Learning is a critical part of this module. It will require adding a step that pre-calculates the energy of each structure using a simple, hard-coded baseline potential (e.g., ZBL) and then subtracting this from the DFT target energy before passing the data to the training algorithm.
+**Module C: Labelling Engine (Automated DFT)**
+Architecturally, Module C acts as an abstraction layer over the external Quantum Espresso code. It exposes a clean Python API—`label(atoms: ase.Atoms) -> DFTResult`—to the rest of the system. Internally, this module will be composed of three sub-components:
+1.  **Input Writer:** A component responsible for translating the in-memory `ase.Atoms` object into a valid QE input file string. It will fetch appropriate pseudopotential names and cutoff energies from a configuration file or a library like SSSP.
+2.  **Process Runner:** A robust sub-component for executing the external `pw.x` process. It will handle command-line execution (including MPI commands like `mpirun`), capture `stdout` and `stderr`, and manage timeouts and error conditions.
+3.  **Output Parser:** A component that uses regular expressions or a dedicated parsing library to scan the QE output file for the specific lines containing the final total energy, atomic forces, and stress tensor. It will be designed to be resilient to minor variations in output formatting.
+
+**Module D: Training Engine (Delta Learning)**
+Module D is the machine learning core of the system. Its architecture is designed to be a configurable pipeline that takes labelled data from the database and produces a trained model file.
+1.  **Data Loader:** This component queries the ASE database to fetch a set of labelled structures. Crucially, for each structure, it also computes the energy and forces from the chosen baseline potential (e.g., ZBL). It then calculates the *delta* (residual) that the ML model needs to learn.
+2.  **Model Integrator:** This will be a wrapper around the chosen MLIP framework (e.g., MACE). It will be responsible for instantiating the model with the correct hyperparameters (number of layers, cutoff radius, etc.) defined in the system's configuration.
+3.  **Training Loop:** This component implements the actual training process. It splits the data into training and validation sets, feeds batches of data to the model, calculates the loss function (on the delta values), and uses an optimizer (like Adam) to update the model's weights. It will also handle validation checks and save the model with the best performance.
+
+The interaction between these components is mediated by the `WorkflowOrchestrator`, which, in this cycle, will be a simple script. It will first call Module C to label an initial structure, and once the result is stored in the database, it will then call Module D to train a model on that single data point. This simple, linear orchestration validates the fundamental module interaction and data flow, paving the way for the complex, cyclical orchestrations of later cycles. The use of a central, persistent database from the outset is the key architectural feature that ensures traceability and enables this modular, decoupled design to function effectively.
 
 ## 3. Design Architecture
 
-This cycle focuses on establishing clean interfaces and robust, single-responsibility classes that can be extended in future cycles.
+The software design for Cycle 01 focuses on creating a clean, maintainable, and testable Python codebase. We will use object-oriented principles to encapsulate the logic for each module and Pydantic for strict data modelling, ensuring that data passed between components is always valid.
 
-**Key Classes and APIs:**
+**File and Class Structure:**
 
-*   **`mlip_pipe.orchestrator.Orchestrator`**
-    *   `__init__(self, config)`: Initializes with a configuration object that specifies paths and parameters.
-    *   `run_labelling_and_training(self, input_dir: str, output_potential: str)`: The main entry point for the Cycle 01 workflow. It orchestrates the entire process from reading files to saving the final potential.
+```
+mlip_autopipec/
+├── main_cycle01.py        # CLI entry point for this cycle's functionality
+├── orchestrator_cycle01.py # Simple orchestrator for the linear workflow
+├── modules/
+│   ├── c_labelling_engine.py
+│   └── d_training_engine.py
+├── data/
+│   ├── models.py
+│   └── database.py
+├── utils/
+│   ├── dft_utils.py
+│   └── baseline_potentials.py
+└── configs/
+    └── cycle01_config.yaml # Configuration for QE path, MLIP params, etc.
+```
 
-*   **`mlip_pipe.utils.ase_db.DatabaseManager`**
-    *   `__init__(self, db_path: str)`: Connects to the SQLite database file.
-    *   `write(self, atoms: ase.Atoms)`: Writes a single ASE Atoms object to the database, ensuring that the calculated energy, forces, and stress are included as attached properties.
-    *   `get_dataset(self) -> list[ase.Atoms]`: Retrieves all Atoms objects from the database, effectively creating the training set.
+**Class and API Definitions:**
 
-*   **`mlip_pipe.modules.c_labelling_engine.QuantumEspressoRunner`**
-    *   `__init__(self, config)`: Takes a configuration specifying the path to the `pw.x` executable and other DFT parameters.
-    *   `label_structure(self, atoms: ase.Atoms) -> ase.Atoms`:
-        1.  **Input:** An ASE `Atoms` object containing atomic configuration.
-        2.  **Process:**
-            *   Generates a QE input file (`.in`) in a temporary directory. This includes automatically setting cards like `ATOMIC_SPECIES`, `ATOMIC_POSITIONS`, and `CELL_PARAMETERS`.
-            *   Uses the SSSP protocol logic to select pseudopotentials and determine `ecutwfc` and `ecutrho`.
-            *   Constructs and executes the `pw.x` command as a subprocess.
-            *   Monitors the subprocess for completion or errors.
-            *   Parses the QE output file (`.out`) to find the `!` final energy, the `Forces` block, and the `stress` tensor.
-        3.  **Output:** Returns the original `Atoms` object with the `energy`, `forces`, and `stress` arrays attached to its `calc` results dictionary.
+1.  **`data.models.py`**: This file will define the core data structures using Pydantic, ensuring type safety and clear contracts between components.
+    ```python
+    from pydantic import BaseModel
+    from typing import List
 
-*   **`mlip_pipe.modules.d_training_engine.Trainer`**
-    *   `__init__(self, config)`: Takes a configuration specifying the MLIP framework (e.g., 'MACE') and its hyperparameters.
-    *   `train(self, dataset: list[ase.Atoms])`:
-        1.  **Input:** A list of DFT-labelled ASE `Atoms` objects.
-        2.  **Process:**
-            *   For each `Atoms` object in the dataset, it calculates the energy using a baseline reference potential (e.g., ZBL).
-            *   It computes the target energy for the MLIP as `delta_energy = dft_energy - baseline_energy`.
-            *   It prepares the data in the format expected by the chosen MLIP framework.
-            *   It calls the fitting function from the MLIP library.
-            *   It saves the trained model to a file.
-        3.  **Output:** Returns the file path to the saved potential.
+    class DFTResult(BaseModel):
+        total_energy_ev: float
+        forces: List[List[float]]
+        stress: List[List[float]]
+        was_successful: bool
+        error_message: str | None = None
+
+    class TrainingConfig(BaseModel):
+        model_type: str
+        learning_rate: float
+        num_epochs: int
+        r_cut: float
+        delta_learn: bool
+        baseline_potential: str
+    ```
+
+2.  **`modules.c_labelling_engine.LabellingEngine`**: The main class for handling DFT calculations.
+    ```python
+    from ase.atoms import Atoms
+    from .data.models import DFTResult
+    from .data.database import AseDB
+
+    class LabellingEngine:
+        def __init__(self, qe_command: str, db: AseDB):
+            self._qe_command = qe_command
+            self._db = db
+
+        def execute(self, atoms: Atoms) -> int:
+            """Generates input, runs QE, parses output, and saves to DB.
+            Returns the database ID of the new entry."""
+            # ... internal logic using dft_utils ...
+            result: DFTResult = self._parse_output(...)
+            db_id = self._db.write(atoms, result)
+            return db_id
+    ```
+
+3.  **`modules.d_training_engine.TrainingEngine`**: The class responsible for the MLIP training workflow.
+    ```python
+    from .data.database import AseDB
+    from .data.models import TrainingConfig
+
+    class TrainingEngine:
+        def __init__(self, config: TrainingConfig, db: AseDB):
+            self._config = config
+            self._db = db
+
+        def execute(self, ids: list[int]) -> str:
+            """Loads data for given IDs from DB, prepares it for Delta Learning,
+            trains the model, and returns the path to the saved model file."""
+            data = self._load_and_prepare_data(ids)
+            # ... logic to integrate with MACE/NequIP ...
+            # ... training loop ...
+            model_path = self._save_model(...)
+            return model_path
+
+        def _load_and_prepare_data(self, ids: list[int]):
+            """Queries DB, computes baseline values, and calculates residuals."""
+            # ... internal logic using baseline_potentials.py ...
+    ```
+
+4.  **`orchestrator_cycle01.py`**: A simple script to wire the components together for the initial demonstration.
+    ```python
+    # Simplified example
+    from ase.io import read
+    from .modules.c_labelling_engine import LabellingEngine
+    from .modules.d_training_engine import TrainingEngine
+    # ... other imports ...
+
+    def run_cycle01_workflow():
+        config = load_config('configs/cycle01_config.yaml')
+        db = AseDB('mlip.db')
+        labeller = LabellingEngine(config.qe_command, db)
+        trainer = TrainingEngine(config.training, db)
+
+        initial_structure = read('initial.xyz')
+        db_id = labeller.execute(initial_structure)
+        trained_model_path = trainer.execute(ids=[db_id])
+        print(f"Workflow complete. Model saved to: {trained_model_path}")
+    ```
+This design establishes a clear separation of concerns. The `LabellingEngine` and `TrainingEngine` are self-contained units that can be tested independently. The use of Pydantic models for configuration and results enforces a rigid, error-resistant structure. The orchestrator is kept deliberately simple in this cycle, serving only to prove that the two core modules can be connected and can function sequentially.
 
 ## 4. Implementation Approach
 
-The implementation will proceed in a logical, bottom-up fashion, starting with the lowest-level utilities and building up to the final orchestrator.
+The implementation of Cycle 01 will be broken down into a series of logical, sequential steps, ensuring that each part is built and tested before the next is added. The approach prioritizes establishing the external dependencies and interfaces first, followed by the internal logic.
 
-1.  **Project Setup:** Initialize the project using `uv`. Create the `pyproject.toml` file, defining initial dependencies such as `ase`, `numpy`, and a chosen MLIP library (e.g., `mace-torch`). Set up the basic directory structure (`src/mlip_pipe`, `tests`, etc.).
+**Step 1: Project Scaffolding and Dependency Management**
+The very first step is to create the directory structure outlined in the Design Architecture. We will initialize a `pyproject.toml` file to manage the project's metadata and dependencies. The initial set of dependencies will be installed using `uv`:
+*   `ase`: For handling atomic structures and the database.
+*   `pydantic`: For data modelling.
+*   `pyyaml`: For parsing the configuration file.
+*   `mace-torch` or `nequip`: The chosen MLIP framework.
+*   `pytest` and `pytest-mock`: For the testing framework.
+This step ensures a reproducible development environment is established from the outset.
 
-2.  **ASE Database Utility:** Implement the `DatabaseManager` class first. This is a simple but critical component that other parts of the system will depend on. Write unit tests to verify that it can create a database, write Atoms objects (with and without calculator results), and read them back correctly.
+**Step 2: Implementing the Labelling Engine (Module C)**
+This module will be built in three distinct parts:
+1.  **Input Generation:** We will start by writing the `dft_utils.generate_qe_input` function. This function will take an `ase.Atoms` object and a set of parameters (cutoffs, k-points) and produce a string containing the QE input file content. This will be unit-tested extensively with various structures (e.g., cubic, triclinic cells) to ensure correctness. We will use SSSP pseudopotential and cutoff recommendations, which will be stored in a configuration file.
+2.  **Process Execution:** Next, we will implement the logic to run the `pw.x` executable using Python's `subprocess` module. This will be wrapped in a helper function that handles capturing standard output and standard error, and detects non-zero exit codes. Care will be taken to construct the command line properly, allowing for `mpirun` prefixes for parallel execution as specified in the configuration.
+3.  **Output Parsing:** The most fragile part of this module is parsing the QE output. We will create a `dft_utils.parse_qe_output` function that takes the captured stdout string as input. It will use carefully crafted regular expressions to find and extract the final energy (`! total energy`), the forces (`Forces acting on atoms`), and the stress tensor (`total stress`). This function will be tested against a collection of pre-saved, real QE output files, including those from successful runs and failed (non-converged) runs, to ensure its robustness.
+4.  **Class Integration:** Finally, these functions will be integrated into the `LabellingEngine` class, which will orchestrate the call sequence: generate input -> run process -> parse output -> store in the `AseDB`.
 
-3.  **Quantum Espresso Wrapper:** This is the most complex part of the cycle.
-    *   Begin by focusing on input file generation. Write a function that takes an `Atoms` object and produces a valid, well-formatted QE input string. This should be tested independently.
-    *   Implement the SSSP logic. This might involve creating a simple data structure (like a dictionary) that maps elements to their recommended pseudopotential file names and cutoff energies.
-    *   Implement the output parsing logic. Create functions that can robustly parse a sample QE output file to find the specific markers for energy, forces, and stress, and handle potential variations in formatting.
-    *   Combine these pieces into the `QuantumEspressoRunner` class. The `label_structure` method will call these internal functions in sequence. Mock the actual `subprocess.run` call during unit testing to avoid dependency on a real QE installation.
+**Step 3: Implementing the Training Engine (Module D)**
+This module's implementation will also be staged.
+1.  **Baseline Potential Calculation:** We will first implement the `utils.baseline_potentials` module. This will contain functions that take an `ase.Atoms` object and return the energy and forces calculated from a simple potential like Lennard-Jones or ZBL. This will be a pure Python/NumPy implementation, heavily unit-tested for correctness.
+2.  **Data Loading and Preparation:** The `_load_and_prepare_data` method of the `TrainingEngine` will be implemented. This method will fetch data from the `AseDB`, call the baseline potential functions, and compute the `delta` values (e.g., `force_delta = dft_force - baseline_force`). The output will be a list of data objects ready for the MLIP framework.
+3.  **MLIP Framework Integration:** This is the core integration task. We will write a wrapper around the chosen framework (e.g., MACE). This wrapper will handle the boilerplate code for:
+    *   Initializing the MACE model architecture.
+    *   Converting our prepared data into the `torch_geometric` or `ase.Atoms` list format expected by MACE.
+    *   Setting up the PyTorch optimizer and loss function.
+    *   Running the training loop for the specified number of epochs.
+    *   Saving the final trained model to a file.
 
-4.  **Training Engine:**
-    *   Implement the `Trainer` class.
-    *   First, implement the baseline potential calculation. This could be a simple function that takes an `Atoms` object and returns a ZBL energy.
-    *   Implement the main `train` method. The initial version can simply pass the data to the MLIP library without the delta learning.
-    *   Add the delta learning logic by integrating the baseline potential calculation into the `train` method. Unit tests should verify that the target energies are being correctly modified before training.
-
-5.  **Orchestrator:** Finally, implement the `Orchestrator` class. Its implementation will be relatively straightforward as it will mostly involve creating instances of the other classes and calling their methods in the correct order.
-
-6.  **Integration Testing:** Once all components are built, write an integration test that uses a real, simple structure (e.g., Si dimer) and a real (but fast) QE calculation to verify the entire workflow from start to finish. This test will be slow and will be marked as such, but it is essential for verifying that the components work together correctly.
+**Step 4: Wiring and Final Testing**
+Once both modules are implemented and unit-tested, we will write the simple `orchestrator_cycle01.py` script. This script will instantiate the engines and run them in sequence on a simple test case, like a single silicon atom in a box or a water molecule. An end-to-end integration test will be created from this script, which will run a real, albeit very fast, QE calculation and a short MLIP training run (e.g., for 5 epochs). The successful execution of this test will signify the completion of Cycle 01.
 
 ## 5. Test Strategy
 
-Testing in Cycle 01 is focused on ensuring the correctness and reliability of the core data processing components.
+The testing strategy for Cycle 01 is foundational, focusing on ensuring the correctness of individual components (unit tests) and verifying their ability to work together (integration tests). The goal is to build a high level of confidence in the core data processing pipeline before adding further complexity. We will use the `pytest` framework for all tests.
 
-**Unit Testing Approach (Min 300 words):**
-Unit tests will form the backbone of our quality assurance. Each class will have a corresponding test file (e.g., `test_orchestrator.py`). We will use `pytest` as our test runner and `pytest-mock` to isolate components.
+**Unit Testing:**
 
-*   **`TestQuantumEspressoRunner`:** The `subprocess.run` call to `pw.x` will be mocked. We will provide a mock `Atoms` object and assert that the generated QE input file string is exactly correct. We will also test the parser by feeding it a static, pre-saved QE output file and asserting that it extracts the correct floating-point values for energy, forces, and stress. We will test edge cases, such as systems with and without lattice vectors (molecules vs. crystals) and systems containing different element types, ensuring the SSSP protocol selects the correct parameters. Error handling will also be tested: what happens if the QE output file does not contain the final energy? The parser should raise an appropriate exception.
+The focus of unit testing is to test each class and function in isolation, using `pytest-mock` to replace external dependencies like file I/O or actual subprocess calls.
 
-*   **`TestTrainer`:** The `Trainer` will be tested without actually training a model, which would be too slow. We will mock the underlying MLIP library's `fit()` function. The tests will focus on data preparation. We will provide a sample dataset and assert that the `train` method correctly calculates the delta energies by comparing them to pre-calculated values. We will verify that the data is transformed into the precise format expected by the mocked `fit()` function.
+*   **`LabellingEngine` (Module C):**
+    *   **Input Writer Tests:** A suite of tests will verify the `generate_qe_input` function. We will provide it with different `ase.Atoms` objects (varying cell sizes, symmetries, number of atoms) and assert that the generated input string is syntactically correct and contains the right values. We will also test edge cases like empty structures or unsupported atom types.
+    *   **Output Parser Tests:** We will create a directory of static test data containing saved QE output files. This will include outputs from a standard successful run, a run that failed to converge, a run with magnetic moments, and a run with stress calculations. The `parse_qe_output` function will be tested against each of these files to ensure it extracts the correct data, or correctly identifies the failure mode.
+    *   **Process Runner Mocking:** When testing the `LabellingEngine.execute` method, we will mock the `subprocess.run` call. This allows us to test the engine's logic (e.g., that it calls the correct command and handles the mocked return code) without actually needing Quantum Espresso to be installed or run, making the unit tests fast and portable.
 
-*   **`TestDatabaseManager`:** These tests will interact with a real, temporary SQLite database file. We will test the full lifecycle: creating a database, writing several `Atoms` objects with different properties, and then reading them all back to ensure the data is identical. We will verify that calculator results (energy, forces) are correctly serialized and deserialized.
+*   **`TrainingEngine` (Module D):**
+    *   **Baseline Potential Tests:** The `baseline_potentials` functions will be tested against known analytical values. For a two-atom system at a specific distance, we will assert that the calculated LJ/ZBL potential energy and force match hand-calculated or reference values to a high precision.
+    *   **Data Preparation Tests:** We will test the `_load_and_prepare_data` method by providing it with a mock database interface. We will verify that it correctly retrieves the DFT data, calls the baseline potential calculator, and computes the delta values accurately.
+    *   **Trainer Mocking:** The integration with the MLIP framework will be tested by mocking the framework itself. We will test that our `TrainingEngine` correctly instantiates the model (e.g., `mace.MACE(...)` is called with the right parameters) and that it calls the training method with the correctly prepared data. This verifies our wrapper logic without the need for a time-consuming GPU-based training run in the unit test suite.
 
-**Integration Testing Approach (Min 300 words):**
-While unit tests verify components in isolation, integration tests ensure they communicate correctly. For Cycle 01, one primary integration test is required, which we can call `test_full_pipeline_si_dimer`.
+**Integration Testing:**
 
-This test will be a complete, end-to-end run of the pipeline on a minimal, physically simple system: a two-atom silicon dimer. This test will *not* use mocks for Quantum Espresso. It will require a real `pw.x` executable to be in the system's PATH.
+Integration tests are designed to ensure that the separately developed modules function correctly when connected. These tests are slower and have more dependencies (requiring a real QE executable and a working MLIP installation).
 
-The test will perform the following steps:
-1.  Programmatically create an ASE `Atoms` object for the Si dimer.
-2.  Instantiate the `Orchestrator`.
-3.  Call the main orchestrator method, pointing it to the Si dimer object.
-4.  The orchestrator will invoke the `QuantumEspressoRunner`, which will generate a real input file and execute a real `pw.x` calculation. Since the system is tiny, this will be fast (a few seconds).
-5.  The runner will parse the output and return the labelled `Atoms` object.
-6.  The orchestrator will save this object to a temporary database.
-7.  The orchestrator will then invoke the `Trainer`. For the integration test, the training itself can be mocked or configured to run for only a single epoch to ensure the data is passed correctly without spending significant time.
-8.  The test will assert that the final potential file is created. More importantly, it will query the database and assert that the energy and forces read from the database for the Si dimer are physically reasonable and close to expected values.
+*   **Test 1: Successful Labelling Workflow:**
+    *   **Objective:** Verify the full process from `ase.Atoms` object to a successful entry in the ASE database.
+    *   **Setup:** Requires a lightweight test case (e.g., a single H atom in a box) and a configured path to the `pw.x` executable. The test will start with an empty database.
+    *   **Execution:** The test will call `LabellingEngine.execute` with the H atom structure.
+    *   **Verification:** The test will assert that the `execute` method completes without errors. It will then query the database to ensure that a new entry was created and that the stored energy and forces are of the correct type and are physically reasonable (e.g., forces are close to zero for a symmetric configuration).
 
-This test provides an invaluable guarantee that the data contracts between the different components are solid and that the system works in a real-world environment. It will be marked as a "slow" test and may be run less frequently than the unit tests.
+*   **Test 2: Full End-to-End Run (Labelling + Training):**
+    *   **Objective:** Verify the entire Cycle 01 workflow from a structure file to a saved MLIP model file.
+    *   **Setup:** Builds on Test 1.
+    *   **Execution:** The test will first call the `LabellingEngine` to create a database entry. It will then instantiate the `TrainingEngine` and call its `execute` method, pointing it to the newly created database ID. The training will be configured for a minimal number of epochs (e.g., 2-3) to ensure the test runs quickly.
+    *   **Verification:** The test will assert that the `TrainingEngine.execute` method returns a valid file path and that a model file actually exists at that path. This confirms that the data flowed correctly from the labeller to the database, and from the database to the trainer, and that the training process completed without crashing. This is the ultimate "smoke test" for Cycle 01.

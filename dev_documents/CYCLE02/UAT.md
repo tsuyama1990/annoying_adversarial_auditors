@@ -1,105 +1,109 @@
-# Cycle 02 User Acceptance Testing (UAT)
+# Cycle 02: Automation Kickstart - User Acceptance Test (UAT) Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To verify that the system can autonomously generate an initial training dataset and train a potential, starting from a minimal, user-provided configuration file.
+**Cycle:** 02
+**Title:** UAT for Initial Structure and Configuration Automation
 
 ## 1. Test Scenarios
 
-This UAT focuses on validating the new user-facing functionality (the `input.yaml`) and the correctness of the automated generation and configuration logic. The scenarios are designed to test the main supported use cases and ensure the heuristic engine is making sensible decisions.
+This document outlines the User Acceptance Tests (UAT) for the functionality developed in Cycle 02. This cycle's primary goal is to remove the need for manual user intervention in providing atomic structures and detailed configurations. The user now interacts with the system via a single, high-level `input.yaml` file. These tests are designed from the perspective of a user to verify that this new, simplified workflow is functional, intelligent, and robust. The user will test the system's ability to correctly interpret their scientific intent, automatically generate appropriate inputs for the backend, and handle incorrect or unsupported requests gracefully.
 
-| Scenario ID | Priority | Summary                                                                                    |
-| :---------- | :------- | :----------------------------------------------------------------------------------------- |
-| UAT-C02-01  | **High** | Verify successful end-to-end pipeline execution for an alloy system from `input.yaml`.     |
-| UAT-C02-02  | **High** | Verify successful end-to-end pipeline execution for a molecular system from `input.yaml`.   |
-| UAT-C02-03  | **Medium** | Confirm the heuristic engine correctly identifies and configures a magnetic system.        |
-| UAT-C02-04  | **Medium** | Ensure the system produces a descriptive error message for an invalid `input.yaml`.        |
+| Scenario ID | Test Scenario Description                                                                                             | Priority |
+| :---------- | :---------------------------------------------------------------------------------------------------------------------- | :------- |
+| UAT-C02-01  | **Successful Alloy Workflow from Minimal Input:** Verify a full run for an alloy system starting from a minimal `input.yaml`.       | High     |
+| UAT-C02-02  | **Successful Molecule Workflow from Minimal Input:** Verify a full run for a molecular system starting from a minimal `input.yaml`. | High     |
+| UAT-C02-03  | **Verification of Generated `exec_config_dump.yaml`:** Confirm that the Heuristic Engine produces a complete and sensible configuration file. | High     |
+| UAT-C02-04  | **Verification of Generated Structures:** Check that Module A produces a diverse and valid set of initial atomic structures in the database. | Medium   |
+| UAT-C02-05  | **Handling of Invalid Composition:** Ensure the system gives a clear error message for a composition with unsupported elements.     | High     |
 
----
+### Scenario Details
 
-### **Scenario UAT-C02-01: Alloy System End-to-End**
+**UAT-C02-01: Successful Alloy Workflow from Minimal Input**
+This is the primary "happy path" test for a common use case. The user will create a very simple `input.yaml` file containing only the elements and composition for a binary alloy, for example, `elements: [Cu, Au]` and `composition: CuAu`. They will then execute the main workflow. The acceptance criterion is that the entire pipeline runs to completion without any errors and produces a final trained MLIP model file. This test validates that the Heuristic Engine correctly identifies the system as an 'alloy', triggers the SQS algorithm in Module A, and that the generated structures are successfully processed by the core engine from Cycle 01.
 
-*   **Description:** This is the primary success scenario for this cycle. It tests the complete, enhanced workflow for a typical use case: generating a potential for a binary alloy. It validates the `ConfigExpander`'s ability to identify an alloy, select the SQS algorithm, and configure the rest of the pipeline correctly.
-*   **Success Criteria:**
-    *   Given an `input.yaml` with `elements: ["Ni", "Al"]`, the pipeline must execute from start to finish without errors.
-    *   The system must generate an `exec_config_dump.yaml` file.
-    *   The `generation` algorithm in the dump file must be set to `SQS`.
-    *   The `SQSGenerator` must be executed, producing a set of ASE `Atoms` objects corresponding to NiAl structures with varying strains.
-    *   These structures must be successfully labelled by the `QuantumEspressoRunner`.
-    *   A final MLIP file must be created based on the automatically generated and labelled data.
-    *   The ASE database must contain more than one structure.
+**UAT-C02-02: Successful Molecule Workflow from Minimal Input**
+This test is similar to the first but validates a different path through the system's logic. The user will create a minimal `input.yaml` for a simple molecule, for example, `elements: [H, O]` and `composition: H2O`. They will run the main workflow. The acceptance criterion is, again, the successful creation of a trained MLIP model file without any errors. This test confirms that the Heuristic Engine correctly identifies the system as a 'molecule' and triggers the Normal Mode Sampling (NMS) algorithm, demonstrating the system's ability to handle different material types correctly.
 
----
+**UAT-C02-03: Verification of Generated `exec_config_dump.yaml`**
+This test focuses on the output of the Heuristic Engine. After running the workflow from UAT-C02-01, the user will inspect the `exec_config_dump.yaml` file that was created. The acceptance criteria are:
+1. The file must be valid YAML.
+2. The `system.structure_type` field must be correctly set to `'alloy'`.
+3. The `dft_compute` section must be fully populated with specific, sensible values for `ecutwfc`, `ecutrho`, and `pseudopotentials`. The user should see that the cutoff energy is a reasonable number (e.g., > 40 Ry) and not zero or null.
+This test verifies that the core automation logic is working as intended and is making reasonable, expert-level decisions.
 
-### **Scenario UAT-C02-02: Molecular System End-to-End**
+**UAT-C02-04: Verification of Generated Structures**
+This test verifies the output of the Structure Generator (Module A). After running the workflow from UAT-C02-01, the user will inspect the `mlip.db` database. The acceptance criteria are:
+1. The database should contain multiple new entries (e.g., more than 5).
+2. The user should be able to extract these structures (e.g., by visualizing them or checking their properties) and see that they are not all identical. They should observe variations in atomic positions and cell shape, indicating that the generation process is creating a diverse dataset.
+This test confirms that Module A is not just running, but is producing a useful and varied set of inputs for the training process.
 
-*   **Description:** This scenario ensures that the heuristic engine's classification logic is working correctly and that a different, appropriate generation pathway is triggered for molecular systems. It validates the selection and execution of the Normal Mode Sampling (NMS) algorithm.
-*   **Success Criteria:**
-    *   Given an `input.yaml` with `elements: ["C", "H"]` and a reference `methane.xyz` file, the pipeline must execute without errors.
-    *   The system must generate an `exec_config_dump.yaml`.
-    *   The `generation` algorithm in the dump file must be set to `NMS`.
-    *   The `NMSGenerator` must be executed, producing a set of distorted methane molecules.
-    *   These molecular structures must be successfully labelled by the `QuantumEspressoRunner`.
-    *   A final MLIP file must be created.
-
----
-
-### **Scenario UAT-C02-03: Magnetic System Configuration**
-
-*   **Description:** This is a "white-box" test to verify that the `ConfigExpander`'s physical heuristics are working correctly. It specifically checks if the presence of a known magnetic element (like Iron) correctly triggers the magnetic settings in the DFT configuration. This is crucial for obtaining physically correct results for many important materials.
-*   **Success Criteria:**
-    *   Given an `input.yaml` containing a magnetic element, such as `elements: ["Fe", "Pt"]`.
-    *   The `ConfigExpander` must run and produce an `exec_config_dump.yaml`.
-    *   Within the `dft_compute` section of the dump file, the `magnetism` parameter must be set to a value like `"ferromagnetic"` or `nspin` must be set to `2`.
-    *   The subsequent call to the `QuantumEspressoRunner` should generate QE input files that include the appropriate magnetic flags (`nspin = 2` and starting magnetization values).
-
----
-
-### **Scenario UAT-C02-04: Invalid Input Handling**
-
-*   **Description:** This scenario tests the system's robustness and user-friendliness when faced with incorrect input. A user might make a typo or provide invalid information, and the system should fail gracefully with a clear, actionable error message rather than a confusing traceback.
-*   **Success Criteria:**
-    *   Given an `input.yaml` file that is syntactically correct YAML but contains invalid data (e.g., `elements: ["Fe", "InvalidElement"]`).
-    *   When the pipeline is executed, it should stop during the `ConfigExpander` stage.
-    *   The system must not crash. Instead, it should print a clear error message to the console, such as "Error: Invalid element symbol 'InvalidElement' found in input.yaml."
-    *   The process should terminate with a non-zero exit code.
-    *   No `exec_config_dump.yaml` or ASE database should be created.
+**UAT-C02-05: Handling of Invalid Composition**
+This test checks the system's input validation and robustness. The user will create an `input.yaml` containing a fictional element, e.g., `elements: [Fe, Zz]`. They will then execute the workflow. The acceptance criterion is that the system exits gracefully with a clear, user-friendly error message, such as "Error: The element 'Zz' is not supported or has no corresponding pseudopotential in the SSSP library." The system must not crash or produce a long, cryptic traceback. This test validates the error-handling capabilities of the Heuristic Engine.
 
 ## 2. Behavior Definitions
 
-### **GIVEN/WHEN/THEN Definitions**
+The following behavior definitions are written in Gherkin style to provide a clear, unambiguous description of the expected system behavior for the key test scenarios.
 
-**Scenario: UAT-C02-01**
-*   **GIVEN** a simple `input.yaml` file containing `system: { elements: ["Ni", "Al"] }`.
-*   **AND** a valid Quantum Espresso `pw.x` executable is available.
-*   **WHEN** the user executes the main pipeline script with this input file.
-*   **THEN** the system should create a detailed `exec_config_dump.yaml` file.
-*   **AND** this dump file must specify "SQS" as the generation algorithm.
-*   **AND** the system should generate a series of NiAl atomic structures.
-*   **AND** the system must successfully calculate the DFT energies and forces for these structures.
-*   **AND** the system must train an MLIP on the generated data.
-*   **AND** the system must save a final potential file.
-*   **AND** the entire process must complete without user intervention.
+---
 
-**Scenario: UAT-C02-02**
-*   **GIVEN** an `input.yaml` file with `system: { elements: ["C", "H"] }` and a path to a reference geometry file.
-*   **AND** a valid Quantum Espresso `pw.x` executable.
-*   **WHEN** the user executes the pipeline.
-*   **THEN** the generated `exec_config_dump.yaml` must specify "NMS" as the generation algorithm.
-*   **AND** the system must generate a set of distorted molecular structures based on the reference geometry.
-*   **AND** the system must successfully label them using DFT.
-*   **AND** the system must successfully train and save an MLIP.
+**Scenario: UAT-C02-01 - Successful Alloy Workflow from Minimal Input**
 
-**Scenario: UAT-C02-03**
-*   **GIVEN** an `input.yaml` file containing `system: { elements: ["Fe", "Si"] }`.
-*   **WHEN** the user executes the pipeline.
-*   **THEN** the `ConfigExpander` must produce an `exec_config_dump.yaml`.
-*   **AND** within this file, the `dft_compute` section must contain settings appropriate for a spin-polarized calculation (e.g., `nspin: 2`).
-*   **AND** the Quantum Espresso input files generated later in the process must include these settings.
+**GIVEN** I have a minimal configuration file named `cuau_input.yaml` with the content:
+```yaml
+elements: [Cu, Au]
+composition: CuAu
+```
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle02 --config cuau_input.yaml`.
+**THEN** the script should run to completion without raising any errors.
+**AND** the script's output should contain a success message, for example, "Cycle 02 workflow complete."
+**AND** a trained model file must exist.
 
-**Scenario: UAT-C02-04**
-*   **GIVEN** an `input.yaml` file containing `system: { elements: ["Bogus"] }`.
-*   **WHEN** the user executes the pipeline.
-*   **THEN** the program should terminate before starting any DFT calculations.
-*   **AND** an error message should be printed to the screen clearly stating that the element "Bogus" is not valid.
-*   **AND** the program should exit with a status code indicating failure.
+---
+
+**Scenario: UAT-C02-02 - Successful Molecule Workflow from Minimal Input**
+
+**GIVEN** I have a minimal configuration file named `h2o_input.yaml` with the content:
+```yaml
+elements: [H, O]
+composition: H2O
+```
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle02 --config h2o_input.yaml`.
+**THEN** the script should run to completion without raising any errors.
+**AND** the script's output should contain a success message, for example, "Cycle 02 workflow complete."
+**AND** a trained model file must exist.
+
+---
+
+**Scenario: UAT-C02-03 - Verification of Generated `exec_config_dump.yaml`**
+
+**GIVEN** I have successfully run the workflow from scenario UAT-C02-01.
+**WHEN** I open and inspect the generated `exec_config_dump.yaml` file.
+**THEN** the file must be syntactically valid YAML.
+**AND** the value of the key `system.structure_type` must be the string `"alloy"`.
+**AND** the value of the key `dft_compute.ecutwfc` must be a floating-point number greater than 30.0.
+**AND** the value of the key `dft_compute.pseudopotentials` must be a non-empty string.
+
+---
+
+**Scenario: UAT-C02-04 - Verification of Generated Structures**
+
+**GIVEN** I have successfully run the workflow from scenario UAT-C02-01.
+**WHEN** I query the `mlip.db` database for the number of new structures created in the latest run.
+**THEN** the number of structures must be greater than 1.
+**AND** when I extract the atomic positions of the first two structures, their coordinates must not be identical.
+
+---
+
+**Scenario: UAT-C02-05 - Handling of Invalid Composition**
+
+**GIVEN** I have a minimal configuration file named `invalid_input.yaml` with the content:
+```yaml
+elements: [Fe, Zz]
+composition: FeZz
+```
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle02 --config invalid_input.yaml`.
+**THEN** the script should exit gracefully and not produce a Python traceback.
+**AND** the script's output on the console should contain a clear error message like "Error: Element 'Zz' is not supported."
+
+---

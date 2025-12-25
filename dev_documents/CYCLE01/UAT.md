@@ -1,112 +1,80 @@
-# Cycle 01 User Acceptance Testing (UAT)
+# Cycle 01: Core Engine - User Acceptance Test (UAT) Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To verify that the core pipeline can correctly process a given set of atomic structures, label them using Quantum Espresso, and train a basic MLIP from the resulting data.
+**Cycle:** 01
+**Title:** UAT for Core Engine: Automated Labelling and Delta Learning Training
 
 ## 1. Test Scenarios
 
-This UAT focuses on validating the foundational capabilities of the system from a technical user's (e.g., a developer or computational scientist) perspective. The scenarios are designed to ensure the core data processing is reliable, accurate, and robust.
+This document outlines the User Acceptance Tests (UAT) for the functionality developed in Cycle 01. The focus of this cycle is to establish the core capability of the system: processing a single atomic structure to generate DFT labels and subsequently training a basic Machine Learning Interatomic Potential (MLIP). These tests are designed to be executed by a user (e.g., a computational scientist) to verify that the system meets the fundamental requirements from their perspective. The user will interact with the system via the command-line interface developed in this cycle, using a simple, well-defined test case, such as a Silicon bulk unit cell. The primary goal is to confirm that the main workflow is functional, produces predictable outputs, and handles basic success and failure cases gracefully.
 
-| Scenario ID | Priority | Summary                                                                                        |
-| :---------- | :------- | :--------------------------------------------------------------------------------------------- |
-| UAT-C01-01  | **High** | Verify successful end-to-end processing of a simple crystalline solid (e.g., Silicon).         |
-| UAT-C01-02  | **High** | Verify successful end-to-end processing of a simple molecular system (e.g., a water molecule). |
-| UAT-C01-03  | **Medium** | Confirm the Delta Learning mechanism correctly modifies training targets.                      |
-| UAT-C01-04  | **Medium** | Ensure the system handles common error conditions gracefully (e.g., failed DFT calculation).   |
+| Scenario ID | Test Scenario Description                                                                | Priority |
+| :---------- | :--------------------------------------------------------------------------------------- | :------- |
+| UAT-C01-01  | **Successful End-to-End Workflow:** Verify a successful run from a structure file to a trained MLIP model. | High     |
+| UAT-C01-02  | **Verification of DFT Labels:** Confirm that the DFT energy and forces stored in the database are physically correct and reasonable. | High     |
+| UAT-C01-03  | **Verification of Delta Learning:** Check that the training process correctly uses the Delta Learning approach by comparing outputs with a non-delta run. | Medium   |
+| UAT-C01-04  | **Handling of Failed DFT Calculation:** Ensure the system correctly detects and reports a failed (non-converged) DFT calculation without crashing. | High     |
 
----
+### Scenario Details
 
-### **Scenario UAT-C01-01: Crystalline Solid Processing**
+**UAT-C01-01: Successful End-to-End Workflow**
+This is the primary "happy path" test. The user will provide the system with a valid atomic structure file (e.g., a POSCAR or CIF file for bulk Silicon). The user will then execute the main script for the Cycle 01 workflow. The acceptance criterion is that the script runs to completion without any errors or crashes. At the end of the run, the system must report a success message and provide the file path to a newly created MLIP model file. The user must then verify that a file actually exists at the specified location and that it is not empty. This test confirms the successful integration of the Labelling Engine and the Training Engine and ensures the fundamental data pipeline is working as expected.
 
-*   **Description:** This scenario is the primary validation of the core workflow. It tests the system's ability to handle a periodic, crystalline material, which is a common use case. It will verify input file generation for a crystal, execution of DFT, parsing of energy, forces, and stress, database storage, and the final training step. The test uses a standard, well-understood material (Silicon) to ensure the DFT results can be easily verified against known values.
-*   **Success Criteria:**
-    *   The pipeline must execute from start to finish without crashing.
-    *   The generated Quantum Espresso input file for the silicon unit cell must contain the correct lattice parameters (`CELL_PARAMETERS`) and atomic positions.
-    *   The SSSP protocol must correctly select the Si pseudopotential and appropriate cutoff energies.
-    *   The final parsed energy from the QE output must be physically reasonable for bulk silicon.
-    *   The parsed forces should be very close to zero for this highly symmetric, unperturbed structure.
-    *   The parsed stress tensor should also be close to zero.
-    *   The labelled silicon structure must be correctly saved to and retrieved from the ASE database.
-    *   A final MLIP file must be created.
+**UAT-C01-02: Verification of DFT Labels**
+This test focuses on the correctness of the Labelling Engine (Module C). After running the workflow as in UAT-C01-01, the user will use a separate script or a database browser to inspect the ASE database file generated by the system. The user will retrieve the record corresponding to the input Silicon structure. The acceptance criteria are twofold: 1) The stored total energy must be a negative floating-point number within an expected range for bulk Silicon (e.g., between -100 and -200 eV for a 2-atom cell). 2) The forces on the atoms should be very close to zero (e.g., < 1.0e-4 eV/Å), as the input structure is a perfect, symmetric crystal, and thus the atoms are in their equilibrium positions. This test validates that the interface with Quantum Espresso is working correctly and that the output parsing logic is accurate.
 
----
+**UAT-C01-03: Verification of Delta Learning**
+This test ensures that the Delta Learning mechanism in the Training Engine (Module D) is being correctly applied. The user will perform two separate training runs. First, they will run the standard workflow with Delta Learning enabled in the configuration file. Second, they will modify the configuration file to disable Delta Learning and re-run the training on the same DFT data. The acceptance criterion is that the two resulting MLIP model files are different. While a quantitative comparison is complex, a simple file hash (e.g., `md5sum`) check is sufficient to prove that the training process followed a different path. This confirms that the configuration to switch between direct and delta learning is functional and has a tangible effect on the output.
 
-### **Scenario UAT-C01-02: Molecular System Processing**
-
-*   **Description:** This scenario validates the system's ability to handle non-periodic, molecular structures. This is important because the QE input format is different (e.g., `ibrav=0` is not used, and there are no `CELL_PARAMETERS`). It also tests the system's robustness with a multi-element system (Oxygen and Hydrogen).
-*   **Success Criteria:**
-    *   The pipeline must execute from start to finish without crashing when given a water molecule structure.
-    *   The generated QE input file must correctly specify a large vacuum box to avoid self-interaction and must not contain the `CELL_PARAMETERS` card.
-    *   The SSSP protocol must select the correct pseudopotentials for both O and H.
-    *   The parsed energy and forces must be physically reasonable for a water molecule.
-    *   The stress tensor should be effectively zero and correctly parsed.
-    *   The labelled water molecule structure must be correctly stored and retrieved from the database.
-    *   A final MLIP file must be created based on the molecular data.
-
----
-
-### **Scenario UAT-C01-03: Delta Learning Mechanism**
-
-*   **Description:** This scenario specifically targets the verification of the Delta Learning implementation. It is not an end-to-end test but rather a "white-box" test to ensure the core logic of the training engine is correct. The goal is to confirm that the training targets provided to the underlying MLIP framework are the *residuals* (DFT minus baseline) and not the raw DFT energies.
-*   **Success Criteria:**
-    *   During the execution of the `Trainer` class, the system must correctly calculate the energy of a given structure using the hard-coded baseline potential (e.g., ZBL).
-    *   The target energy used for training must be precisely equal to `(DFT Energy) - (Baseline Energy)`. This can be verified by inspecting logs or by adding a specific debugging hook.
-    *   The final trained potential, when used for prediction, should predict the delta, and when the baseline is added back, it should approximate the original DFT energy.
-
----
-
-### **Scenario UAT-C01-04: Error Handling for Failed DFT**
-
-*   **Description:** A robust pipeline must be able to handle failures. This scenario simulates a common failure mode: a DFT calculation that fails to converge. The test will involve providing a deliberately "bad" structure that is known to cause SCF convergence issues in Quantum Espresso. The goal is to ensure the system detects the failure and reports it clearly, rather than crashing or producing garbage data.
-*   **Success Criteria:**
-    *   The `QuantumEspressoRunner` must correctly identify that the QE process has failed (e.g., by checking the exit code or searching for the "JOB DONE" message in the output).
-    *   Instead of returning a labelled `Atoms` object, the runner must raise a specific, informative exception (e.g., `DFTRuntimeError`).
-    *   The main `Orchestrator` must catch this exception.
-    *   The pipeline should stop gracefully and log a clear error message indicating which structure failed to be labelled and why.
-    *   The system must not add the failed structure to the database.
+**UAT-C01-04: Handling of Failed DFT Calculation**
+This test verifies the system's robustness. The user will deliberately create a faulty Quantum Espresso input configuration. For example, they will provide a configuration that sets the electronic convergence threshold (`etot_conv_thr`) to an impossibly small number, guaranteeing that the SCF calculation will not converge. The user then runs the workflow. The acceptance criterion is that the system does not crash with an unhandled exception. Instead, it should gracefully terminate the DFT calculation, log an informative error message to the console (e.g., "Quantum Espresso SCF failed to converge"), and record the failure status in the ASE database for that structure. The Training Engine should not be triggered. This test ensures the error handling within the Labelling Engine is working correctly.
 
 ## 2. Behavior Definitions
 
-### **GIVEN/WHEN/THEN Definitions**
+The following behavior definitions are written in Gherkin style to provide a clear, unambiguous description of the expected system behavior for the key test scenarios.
 
-**Scenario: UAT-C01-01**
-*   **GIVEN** a directory containing a single CIF file for a standard 2-atom Silicon primitive cell.
-*   **AND** a valid Quantum Espresso `pw.x` executable is available in the environment.
-*   **WHEN** the user executes the main pipeline script, pointing it to the input directory.
-*   **THEN** the system should create a Quantum Espresso input file for Silicon.
-*   **AND** the input file should specify the correct lattice constant and atomic positions.
-*   **AND** the system should execute `pw.x` as a subprocess.
-*   **AND** the system should parse the resulting output file, extracting the total energy, forces, and stress.
-*   **AND** the extracted energy should be a negative value (indicating a bound state).
-*   **AND** the magnitude of the force on each atom should be less than 1.0e-4 Ry/au.
-*   **AND** the system should write the labelled Silicon `Atoms` object to an ASE database file.
-*   **AND** the system should then train an MLIP using this single data point.
-*   **AND** a file containing the trained potential must be saved to the working directory.
-*   **AND** the entire process must complete without any errors.
+---
 
-**Scenario: UAT-C01-02**
-*   **GIVEN** a directory containing a single XYZ file for a water molecule.
-*   **AND** a valid Quantum Espresso `pw.x` executable is available in the environment.
-*   **WHEN** the user executes the main pipeline script on this input.
-*   **THEN** the system should generate a QE input file specifying a large simulation cell (vacuum padding).
-*   **AND** the system should execute `pw.x`.
-*   **AND** the system should parse the energy and forces from the QE output.
-*   **AND** the forces on the atoms should be non-zero and physically reasonable.
-*   **AND** the labelled water molecule should be correctly saved to the database.
-*   **AND** the system should successfully train an MLIP and save the potential file.
+**Scenario: UAT-C01-01 - Successful End-to-End Workflow**
 
-**Scenario: UAT-C01-03**
-*   **GIVEN** a DFT-labelled structure with a known energy of -100 eV.
-*   **AND** a baseline potential (ZBL) that calculates the energy of this structure as -20 eV.
-*   **WHEN** the `Trainer` class processes this structure.
-*   **THEN** the target energy value passed to the underlying MLIP fitting algorithm must be exactly -80 eV.
+**GIVEN** I have a valid atomic structure file named `Si_bulk.cif`.
+**AND** I have a configuration file `cycle01_config.yaml` specifying the path to the Quantum Espresso executable and enabling Delta Learning.
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle01 --config cycle01_config.yaml --structure Si_bulk.cif`.
+**THEN** the script should run without raising any errors.
+**AND** the script's output should contain a success message, for example, "Workflow complete. Model saved to: models/trained_model.pt".
+**AND** a file named `trained_model.pt` must exist in the `models/` directory.
+**AND** the file size of `trained_model.pt` must be greater than zero.
 
-**Scenario: UAT-C01-04**
-*   **GIVEN** a directory containing a structure file with two atoms placed unrealistically close together (e.g., 0.1 Angstroms apart).
-*   **AND** a valid Quantum Espresso `pw.x` executable.
-*   **WHEN** the user executes the pipeline on this input.
-*   **THEN** the `QuantumEspressoRunner` should detect that the `pw.x` subprocess either returns a non-zero exit code or fails to produce a valid output file.
-*   **AND** the runner should raise a `DFTRuntimeError`.
-*   **AND** the main orchestrator should catch the exception and log a user-friendly error message, such as "ERROR: DFT calculation failed for structure file: [filename]".
-*   **AND** the pipeline should terminate gracefully without creating a database or a potential file.
+---
+
+**Scenario: UAT-C01-02 - Verification of DFT Labels**
+
+**GIVEN** I have successfully completed the workflow from scenario UAT-C01-01.
+**AND** a database file named `mlip.db` exists.
+**WHEN** I inspect the latest entry in the `mlip.db` database.
+**THEN** the entry's 'total_energy_ev' should be a value less than 0.
+**AND** the maximum absolute value of any component of the atomic 'forces' should be less than 0.0001.
+
+---
+
+**Scenario: UAT-C01-03 - Verification of Delta Learning**
+
+**GIVEN** I have successfully completed the workflow from scenario UAT-C01-01 and have a model file `model_delta.pt`.
+**AND** I have modified the `cycle01_config.yaml` to set `delta_learn: false`.
+**WHEN** I re-run the training process on the same data to produce a new model file `model_direct.pt`.
+**THEN** the file hash of `model_delta.pt` must not be the same as the file hash of `model_direct.pt`.
+
+---
+
+**Scenario: UAT-C01-04 - Handling of Failed DFT Calculation**
+
+**GIVEN** I have a valid atomic structure file named `Si_bulk.cif`.
+**AND** I have a configuration file `cycle01_config_fail.yaml` where the DFT convergence threshold is set to an impossibly strict value.
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle01 --config cycle01_config_fail.yaml --structure Si_bulk.cif`.
+**THEN** the script should run without raising any unhandled exceptions.
+**AND** the script's output should contain an error message, for example, "ERROR: Labelling failed for Si_bulk.cif. Reason: SCF did not converge."
+**AND** the script must not proceed to the training step.
+**AND** when I inspect the corresponding entry in the `mlip.db` database, its 'was_successful' field should be `false`.
+
+---

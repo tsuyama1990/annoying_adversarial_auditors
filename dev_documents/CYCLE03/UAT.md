@@ -1,102 +1,88 @@
-# Cycle 03 User Acceptance Testing (UAT)
+# Cycle 03: Efficient Exploration - User Acceptance Test (UAT) Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To verify the efficiency and correctness of the new surrogate-based exploration and sampling workflow, and to validate the performance gains from JIT compilation.
+**Cycle:** 03
+**Title:** UAT for Efficient Phase Space Exploration and Intelligent Sampling
 
 ## 1. Test Scenarios
 
-This UAT focuses on validating the impact of Module B on the pipeline. The scenarios are designed to confirm that the exploration and sampling process leads to an intelligent selection of structures and that the system's performance remains high despite the added complexity.
+This document outlines the User Acceptance Tests (UAT) for the functionality developed in Cycle 03. The focus of this cycle is the introduction of the **Explorer & Sampler (Module B)**, which uses a fast surrogate potential to explore the material's phase space and intelligently select training candidates. These tests are designed to verify from a user's perspective that this new exploration phase is working correctly, improving the diversity of the dataset, and that its performance is acceptable.
 
-| Scenario ID | Priority | Summary                                                                                             |
-| :---------- | :------- | :-------------------------------------------------------------------------------------------------- |
-| UAT-C03-01  | **High** | Verify that the Explorer module successfully runs and selects a small, diverse subset from a large MD trajectory. |
-| UAT-C03-02  | **High** | Confirm end-to-end pipeline execution with the Explorer module enabled.                           |
-| UAT-C03-03  | **Medium** | Validate the performance of the Numba-optimised descriptor calculation.                             |
-| UAT-C03-04  | **Low**  | Ensure the system can gracefully handle the unavailability of a specified surrogate model.          |
+| Scenario ID | Test Scenario Description                                                                                             | Priority |
+| :---------- | :---------------------------------------------------------------------------------------------------------------------- | :------- |
+| UAT-C03-01  | **Successful Workflow with Exploration:** Verify that the full pipeline, now including Module B, runs end-to-end without errors. | High     |
+| UAT-C03-02  | **Verification of Sampled Structures:** Confirm that the structures selected by the DIRECT sampler are diverse and sourced from the MD trajectory. | High     |
+| UAT-C03-03  | **GPU Acceleration:** Verify that the system automatically utilizes an available GPU for the surrogate MD simulation to accelerate the process. | Medium   |
+| UAT-C03-04  | **Controllable Sampling Parameters:** Ensure that the user can control the number of sampled structures via the configuration file. | High     |
 
----
+### Scenario Details
 
-### **Scenario UAT-C03-01: Correctness of Structure Sampling**
+**UAT-C03-01: Successful Workflow with Exploration**
+This is the main "happy path" test for the new, more complex workflow. The user will take a working `input.yaml` from Cycle 02 and add a new section to enable the exploration phase. For example:
+```yaml
+# ... elements and composition ...
+exploration:
+  enabled: true
+  md_steps: 1000
+  sample_count: 10
+```
+The user will then execute the main workflow. The primary acceptance criterion is that the entire pipeline completes successfully and produces a trained MLIP model. This test validates the high-level integration of Module B with the existing modules and confirms that the data flows correctly from the new exploration stage to the labelling and training stages.
 
-*   **Description:** This is the most critical test for this cycle. It validates the core functionality of Module B: its ability to explore a conformational space and intelligently select a small number of representative structures. The test will be configured to run a short MD simulation and then sample a fixed number of frames, allowing us to verify the module's primary purpose.
-*   **Success Criteria:**
-    *   Given a valid `input.yaml`, the Explorer module must be triggered.
-    *   It must successfully run a surrogate-powered MD simulation for a predefined number of steps (e.g., 200).
-    *   It must then execute the DIRECT sampling workflow.
-    *   If the sampling is configured to select `N=15` structures, the module must output a list containing exactly 15 ASE `Atoms` objects.
-    *   The selected structures should be diverse. This can be qualitatively verified by ensuring the selected frame indices are spread out across the 200-step trajectory, not just clustered at the beginning.
-    *   The process must complete without errors.
+**UAT-C03-02: Verification of Sampled Structures**
+This test is designed to confirm that the sampler is not just a placeholder but is actively selecting meaningful structures from a dynamic simulation. After running the workflow from UAT-C03-01, the user will inspect the intermediate data. The acceptance criteria are:
+1. The user will visualize the short MD trajectory file produced by the surrogate model and observe that the atoms are in motion, indicating a real simulation took place.
+2. The user will then visualize the final structures that were stored in the `mlip.db` database. They should be able to see that these structures are varied and are "snapshots" from the trajectory, clearly different from the initial static crystal structure that started the simulation. For example, they should show thermal displacements and slightly distorted cell shapes. This confirms the core value proposition of Module B.
 
----
+**UAT-C03-03: GPU Acceleration**
+This test verifies a key performance feature. The user will need to run the workflow on a machine equipped with a compatible NVIDIA GPU and the required CUDA libraries. The user will monitor the GPU's utilization during the run using a tool like `nvidia-smi`. The acceptance criterion is that during the "Exploration Phase" of the workflow, the `nvidia-smi` command shows significant GPU utilization (e.g., > 10%) and memory usage by the Python process. This confirms that the system correctly detects and leverages the available GPU to speed up the most computationally intensive part of this cycle. If no GPU is present, the test is considered passed if the workflow still completes successfully on the CPU.
 
-### **Scenario UAT-C03-02: Full Pipeline Integration**
-
-*   **Description:** This scenario ensures that the new, complex Explorer module is correctly integrated into the end-to-end workflow and that the data it produces is consumable by the downstream modules. It tests the full data flow from `input.yaml` to the final trained potential.
-*   **Success Criteria:**
-    *   Given a valid `input.yaml`, the full pipeline (Modules A -> B -> C -> D) must execute from start to finish without crashing.
-    *   Module A must generate initial structures.
-    *   Module B must take these, run MD, sample them, and pass a smaller, curated list of structures to Module C.
-    *   Module C must successfully run DFT calculations on the structures provided by Module B.
-    *   Module D must successfully train an MLIP on this DFT-labelled data.
-    *   A final potential file must be created.
-
----
-
-### **Scenario UAT-C03-03: Performance Validation**
-
-*   **Description:** This test validates the "Optimisation" part of the cycle's goal. It's designed to confirm that the use of Numba provides a significant, measurable performance improvement in the most computationally intensive part of Module B. This is not about the overall pipeline speed but specifically about the descriptor calculation bottleneck.
-*   **Success Criteria:**
-    *   A benchmark script will be created that runs the descriptor calculation function on a large, pre-generated trajectory file (e.g., >10,000 frames).
-    *   The execution time of the Numba-optimised function must be measured.
-    *   The execution time must be significantly faster (e.g., at least 10 times faster) than an equivalent pure Python implementation.
-    *   The benchmark test should pass, confirming that our performance target has been met. This ensures the pipeline will not become unusably slow when processing realistic workloads.
-
----
-
-### **Scenario UAT-C03-04: Surrogate Model Availability**
-
-*   **Description:** This scenario tests the system's robustness to external dependencies, in this case, the pre-trained surrogate models which are typically downloaded from the internet. The system should fail gracefully if a specified model is incorrect or cannot be downloaded.
-*   **Success Criteria:**
-    *   The `exec_config_dump.yaml` is manually edited to specify a surrogate model name that does not exist (e.g., `"invalid-model-name"`).
-    *   When the Explorer module is executed, it should attempt to load this model.
-    *   The model loading should fail.
-    *   The system must catch this error and terminate gracefully.
-    *   A clear, user-friendly error message must be printed, such as "Error: Could not download or find the specified surrogate model 'invalid-model-name'. Please check the model name and your internet connection."
-    *   The pipeline should not proceed to the DFT stage.
+**UAT-C03-04: Controllable Sampling Parameters**
+This test ensures that the user has effective control over the new module's behavior. The user will perform two consecutive runs. In the first run, they will set `sample_count: 5` in the exploration section of their `input.yaml`. In the second run, they will change this to `sample_count: 15`. The acceptance criterion is that after each run, a query to the `mlip.db` database shows that the number of newly added structures is exactly 5 and 15, respectively. This test validates that the configuration is being correctly parsed and acted upon by the `ExplorerSampler`.
 
 ## 2. Behavior Definitions
 
-### **GIVEN/WHEN/THEN Definitions**
+The following behavior definitions are written in Gherkin style to provide a clear, unambiguous description of the expected system behavior for the key test scenarios.
 
-**Scenario: UAT-C03-01**
-*   **GIVEN** an `input.yaml` for a simple system.
-*   **AND** the pipeline is configured to run a 200-step MD simulation in the Explorer module.
-*   **AND** the sampler is configured to select 15 representative structures.
-*   **WHEN** the pipeline is executed.
-*   **THEN** the Explorer module should generate a trajectory with 200 frames.
-*   **AND** the Explorer module's output, which becomes the input for the Labelling Engine, must be a list of exactly 15 `Atoms` objects.
-*   **AND** the selected frame indices should not be all from a single, small part of the trajectory.
+---
 
-**Scenario: UAT-C03-02**
-*   **GIVEN** a standard `input.yaml` file for a material like Silicon.
-*   **AND** the full pipeline is enabled.
-*   **WHEN** the user executes the main pipeline script.
-*   **THEN** Module A should generate a few initial structures.
-*   **AND** Module B should take these structures, run a surrogate MD simulation, and produce a small, curated set of structures for labelling.
-*   **AND** Module C should receive this curated set and successfully perform DFT calculations on them.
-*   **AND** Module D should receive the labelled data and successfully train a potential.
-*   **AND** a final potential file should be present in the output directory.
+**Scenario: UAT-C03-01 - Successful Workflow with Exploration**
 
-**Scenario: UAT-C03-03**
-*   **GIVEN** a large trajectory file and a benchmark script.
-*   **WHEN** the benchmark script is executed, running both a pure Python and a Numba-optimised version of the descriptor calculation.
-*   **THEN** the numeric results (the descriptor arrays) from both versions must be approximately equal.
-*   **AND** the wall-clock time for the Numba-optimised version must be at least one order of magnitude smaller than the pure Python version.
+**GIVEN** I have a minimal configuration file `input_with_explore.yaml` that enables the exploration phase.
+**WHEN** I execute the command `python -m mlip_autopipec.main_cycle03 --config input_with_explore.yaml`.
+**THEN** the script should run to completion without raising any errors.
+**AND** the script's output should log the start and end of the "Exploration Phase".
+**AND** a trained model file must be created successfully.
 
-**Scenario: UAT-C03-04**
-*   **GIVEN** a configuration file where the `explorer.surrogate_model` is set to a name that does not exist.
-*   **WHEN** the pipeline is executed.
-*   **THEN** the program should terminate before starting any MD simulations.
-*   **AND** a clear error message identifying the invalid model name must be displayed to the user.
-*   **AND** the program must exit with a non-zero status code.
+---
+
+**Scenario: UAT-C03-02 - Verification of Sampled Structures**
+
+**GIVEN** I have successfully run the workflow from scenario UAT-C03-01.
+**AND** an intermediate trajectory file `surrogate_md.traj` has been created.
+**WHEN** I inspect the final structures stored in the `mlip.db` database.
+**THEN** the potential energy of the first stored structure must be different from the potential energy of the last stored structure.
+**AND** the atomic positions of the stored structures must be visibly different from the initial, perfect crystal structure.
+
+---
+
+**Scenario: UAT-C03-03 - GPU Acceleration**
+
+**GIVEN** I am running the workflow on a machine with a supported NVIDIA GPU.
+**AND** I am monitoring the GPU status with the `nvidia-smi` command.
+**WHEN** the workflow's log indicates it is in the "Exploration Phase" running surrogate MD.
+**THEN** the output of `nvidia-smi` should show a running process associated with the Python script.
+**AND** that process should show non-zero GPU and Memory utilization.
+
+---
+
+**Scenario: UAT-C03-04 - Controllable Sampling Parameters**
+
+**GIVEN** I have a configuration file `input.yaml` with `exploration.sample_count` set to `8`.
+**WHEN** I run the full workflow.
+**THEN** the number of new structures added to the `mlip.db` database for this run must be exactly `8`.
+**GIVEN** I then change the `exploration.sample_count` in `input.yaml` to `12`.
+**WHEN** I run the full workflow again.
+**THEN** the number of new structures added to the `mlip.db` database for this second run must be exactly `12`.
+
+---
