@@ -222,10 +222,15 @@ class JulesClient:
                     except Exception:
                         pass # Ignore if select not supported or fails
 
+                except httpx.RequestError as e:
+                    logger.warning(f"Polling loop network error (transient): {e}")
+                except JulesApiError as e: # Catch custom API errors if they are raised
+                    logger.warning(f"Poll check failed (transient): {e}")
                 except Exception as e:
-                    logger.warning(f"Polling loop error: {e}")
+                    logger.warning(f"Polling loop unexpected error: {e}")
 
                 await asyncio.sleep(self.poll_interval)
+
 
     async def _send_message(self, session_url: str, content: str):
         """
