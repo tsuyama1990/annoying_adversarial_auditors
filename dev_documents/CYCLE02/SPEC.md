@@ -1,127 +1,247 @@
-# Cycle 02 Specification: Automated Configuration and Structure Generation
+# Cycle 02: Automation Kickstart - Specification Document
 
 **Version:** 1.0.0
 **Status:** Final
-**Cycle Goal:** To eliminate the need for manual preparation of input structures by implementing the automated configuration and initial structure generation modules. This cycle makes the pipeline significantly more user-friendly and autonomous.
+**Cycle:** 02
+**Title:** Initial Structure and Configuration Automation
 
 ## 1. Summary
 
-Cycle 02 builds directly upon the foundation laid in Cycle 01, tackling the critical first step of the automated workflow: intelligent data input and generation. The primary goal is to transition the system from a manually-driven tool to a user-friendly, semi-autonomous pipeline. This will be achieved by implementing two key pieces of functionality: the "Two-Tier Configuration" strategy and "Module A: The Structure Generator."
+This document details the technical specifications for the second development cycle of the MLIP-AutoPipe project. Having established the Core Engine in Cycle 01, Cycle 02 marks a pivotal transition from a manually-operated tool to a truly automated system. The central theme of this cycle is the elimination of manual inputs for atomic structures and computational parameters, directly addressing the project's core philosophy of "removing the human expert from the loop." This will be achieved by implementing two critical components: the **Structure Generator (Module A)** and the **Heuristic Engine**, which is the core of our "Two-Tier Configuration Strategy." By the end of this cycle, a user will no longer need to provide explicit structure files or a detailed configuration. Instead, they will interact with the system via a minimal `input.yaml` file, specifying only their high-level scientific goal, such as the chemical composition of the material they wish to model.
 
-First, we will develop the **Config Expander**, a heuristic engine that embodies the core philosophy of "removing the human from the loop." This component will be responsible for parsing a minimal, user-friendly `input.yaml` file, which contains only the most essential information, such as the chemical formula. The engine will then apply a set of physics-based rules and material science heuristics to automatically deduce the system's characteristics. It will determine the bonding type (alloy, molecular, ionic, or covalent) and use this classification to make intelligent decisions about all other necessary parameters. It will generate a complete, verbose, and reproducible `exec_config_dump.yaml` file, specifying everything from DFT parameters (based on the SSSP protocol) to the appropriate structure generation algorithm.
+The first major component, the Structure Generator (Module A), is responsible for creating a diverse and physically relevant set of initial atomic configurations for training. This module is the first step in the data generation pipeline and is crucial for building a robust MLIP. Instead of relying on a single, user-provided structure, the system will programmatically generate a variety of configurations designed to explore the material's potential energy surface. The implementation will be context-aware; the module will first determine the likely bonding character of the material (e.g., metallic alloy, ionic crystal, molecule) and then apply the most appropriate generation algorithm. For instance, it will use Special Quasirandom Structures (SQS) for alloys, Normal Mode Sampling (NMS) for molecules, and Ab Initio Random Structure Searching (AIRSS)-like techniques for ionic crystals. This intelligent, automated seeding ensures the initial dataset is rich with varied local environments, a key prerequisite for a generalizable potential.
 
-Second, we will implement **Module A: Structure Generator**. This module acts as a factory for creating diverse and physically meaningful initial atomic configurations without the need for expensive simulations. Guided by the bond type determined by the Config Expander, it will select and execute the most suitable generation algorithm. For metallic alloys, it will generate Special Quasirandom Structures (SQS) to model chemical disorder. For isolated molecules, it will use Normal Mode Sampling (NMS) to explore the vibrational phase space. For ionic systems, it will employ an Ab Initio Random Structure Searching (AIRSS)-like approach to find stable and metastable polymorphs. This module ensures that the initial dataset is not just a random collection of atoms but a physically relevant starting point for training the MLIP. Upon completion of this cycle, a user will be able to initiate the entire MLIP creation process simply by providing a chemical formula, marking a major step towards a fully automated pipeline.
+The second, and arguably more transformative, component is the Heuristic Engine. This engine is the brain that drives the automation. It ingests the user's high-level, minimal `input.yaml` and expands it into a comprehensive, detailed `exec_config_dump.yaml` file that specifies every single parameter required for the entire workflow. This process involves embedding significant domain expertise into the code. The engine will analyze the composition to select the appropriate structure generation algorithm for Module A. It will automatically determine the correct DFT parameters (like pseudopotentials, plane-wave cutoffs, and k-point densities) by consulting standardized protocols like SSSP. It will even estimate physical properties like melting points to set reasonable temperature ranges for later simulations. This two-tier configuration strategy is the cornerstone of our user-centric design. It drastically lowers the barrier to entry for non-expert users while simultaneously enforcing best practices, ensuring that all calculations are robust, reproducible, and scientifically sound. Upon completion of Cycle 02, the MLIP-AutoPipe will have evolved from a basic tool into an intelligent, automated assistant.
 
 ## 2. System Architecture
 
-The architecture in Cycle 02 introduces two new major components—the Config Expander and Module A—at the very beginning of the existing pipeline. The Orchestrator's logic will be updated to incorporate these new stages.
+Cycle 02 introduces two new major components into the system architecture established in Cycle 01, fundamentally changing the workflow's entry point and control flow. The new components, the **Heuristic Engine** and the **Structure Generator (Module A)**, are placed at the very beginning of the pipeline, abstracting the complexity of setup and configuration away from the user.
 
-**Component Breakdown:**
+The new data flow is as follows:
+1.  **User Input:** The process now begins with a minimal `input.yaml` file, which is the user's sole point of interaction.
+2.  **Heuristic Engine:** The `WorkflowOrchestrator`'s first action is to invoke the Heuristic Engine. This engine parses `input.yaml`, applies a series of physics-based rules and heuristics, and generates the complete `exec_config_dump.yaml`. This new file is the single source of truth for all subsequent modules.
+3.  **Structure Generator (Module A):** The Orchestrator, now using the parameters from `exec_config_dump.yaml`, calls Module A. Module A reads the specified composition and the determined structure type (e.g., 'alloy') and programmatically generates a list of `ase.Atoms` objects.
+4.  **Labelling and Training:** The list of generated structures is then passed to the existing **Labelling Engine (Module C)** from Cycle 01. The orchestrator iterates through each structure, submitting it for DFT calculation. The results are stored in the ASE database. Finally, the collected data is passed to the **Training Engine (Module D)** to generate the first-pass MLIP.
 
-*   **Config Expander (`config/expander.py`):** This new component acts as the brain of the initial setup. It will contain the logic to parse the minimal `input.yaml`.
-    *   **Bond Type Heuristics:** It will use libraries like `pymatgen` to analyze the electronegativity and known properties of the constituent elements to classify the system into one of four categories: Alloy, Molecule, Ionic, Covalent. This classification is the critical decision point that guides subsequent choices.
-    *   **Parameter Generation:** Based on the bond type, it will populate a Pydantic `FullConfig` model. This includes selecting the right algorithm for Module A, setting appropriate DFT parameters (e.g., enabling spin polarization for magnetic elements like Iron), and defining default simulation parameters for later cycles.
-    *   **Output:** Its primary output is the fully specified `exec_config_dump.yaml`, which will be saved to disk for reproducibility and used to drive the rest of the workflow.
+This revised architecture places the Heuristic Engine as a crucial "gatekeeper" and configuration hub. All other modules are now consumers of the configuration it produces. This enforces consistency and centralizes the "expert knowledge" of the system into one place. Module A acts as the new head of the data-generation pipeline, replacing the manual provision of structure files.
 
-*   **Module A: Structure Generator (`modules/a_structure_generator.py`):** This module will be designed as a factory. The Orchestrator will query it with the algorithm name specified in the `FullConfig`.
-    *   **`StructureGeneratorFactory`:** A central function or class that, given a name (e.g., "SQS"), returns an instance of the corresponding generator class.
-    *   **`SQSGenerator`:** A class dedicated to generating SQS configurations. It will likely use an external, well-tested tool like `icet` or `mcsqs` from the `ATAT` package, wrapped in a Python subprocess call. It will generate not just the ideal stoichiometry but also apply various strains and create off-stoichiometry configurations to enrich the dataset.
-    *   **`NMSGenerator`:** A class for performing Normal Mode Sampling. It will take a reference molecular structure, compute its Hessian matrix (potentially using a low-cost calculator), and generate a set of distorted structures by displacing atoms along the calculated normal modes.
-    *   **`AIRSSGenerator`:** A class that implements a simplified version of Ab Initio Random Structure Searching. It will generate random positions for atoms within a simulation cell, subject to constraints like minimum interatomic distances, to create a variety of plausible crystal structures.
+**Architectural Placement:**
 
-*   **Orchestrator (`orchestrator.py`):** The orchestrator's `run` method will be updated with the new preamble:
-    1.  Load `input.yaml`.
-    2.  Instantiate and run `ConfigExpander` to generate `exec_config_dump.yaml`.
-    3.  Load the `FullConfig`.
-    4.  Instantiate `StructureGeneratorFactory` with the algorithm specified in the config.
-    5.  Call the generator's `generate()` method to create the initial list of ASE `Atoms` objects.
-    6.  Proceed with the Cycle 01 workflow: pass the generated structures to the Labelling Engine and then the Training Engine.
+```mermaid
+graph TD
+    A[User Input: input.yaml] --> B{Workflow Orchestrator};
+    B --1. Invoke--> C[Heuristic Engine];
+    C --2. Generate--> D[Full Config: exec_config_dump.yaml];
+    B --3. Read Config & Invoke--> E[Module A: Structure Generator];
+    E --4. Generate Structures--> F[List of ase.Atoms];
+    B --5. Iterate & Invoke--> G[Module C: Labelling Engine];
+    G --6. Label Structures & Store--> H[Data Store: ASE DB];
+    B --7. Invoke--> I[Module D: Training Engine];
+    I --8. Train on Data--> J[MLIP Store];
 
-The data flow is now extended: `input.yaml` -> `ConfigExpander` -> `exec_config_dump.yaml` -> `Orchestrator` -> `Module A` -> `List[Atoms]` -> `Module C` -> `Module D`.
+    subgraph "New in Cycle 02"
+        A; C; D; E; F;
+    end
+
+    subgraph "Existing from Cycle 01"
+        G; H; I; J;
+    end
+
+    style C fill:#ccf,stroke:#333,stroke-width:2px
+    style E fill:#9cf,stroke:#333,stroke-width:2px
+```
+
+The `WorkflowOrchestrator` gains significant new responsibilities. It is no longer a simple linear script but must now manage the initial configuration expansion and then loop over a dynamically generated set of structures. The ASE Database remains the central data store, but it will now be populated with a much richer and more diverse set of initial configurations, all linked by a common run ID, ensuring the entire set from a single `input.yaml` can be traced and analyzed together.
 
 ## 3. Design Architecture
 
-The design focuses on creating a clear separation between the configuration logic and the scientific generation algorithms, and making the latter easily extensible.
+The design for Cycle 02 introduces new classes and modules at the beginning of the project's logical flow, focusing on configuration management and structure generation.
 
-**Key Classes and APIs:**
+**File and Class Structure:**
 
-*   **`mlip_pipe.config.expander.ConfigExpander`**
-    *   `expand_config(self, min_config_path: str) -> FullConfig`: Takes the path to `input.yaml`, parses it, applies heuristics, and returns a validated Pydantic `FullConfig` object.
-    *   `_determine_bond_type(self, elements: list[str]) -> str`: Internal method that contains the logic for classifying the system.
-    *   `_populate_dft_params(self, elements: list[str]) -> DFTConfig`: Internal method to select DFT parameters based on SSSP and element properties.
+```
+mlip_autopipec/
+├── main_cycle02.py            # New CLI entry point for Cycle 02
+├── orchestrator_cycle02.py    # Updated orchestrator
+├── config/
+│   ├── models.py              # Pydantic models for config files
+│   └── expander.py            # HeuristicEngine class
+├── modules/
+│   ├── a_structure_generator.py # StructureGenerator class
+│   ├── c_labelling_engine.py      # (from Cycle 01)
+│   └── d_training_engine.py      # (from Cycle 01)
+├── data/
+│   └── ...                   # (from Cycle 01)
+└── utils/
+    ├── ...                   # (from Cycle 01)
+    └── material_analysis.py  # Helpers for bond type determination
+```
 
-*   **`mlip_pipe.data_models.MinimalConfig` & `FullConfig`**
-    *   The Pydantic data models will be expanded. `MinimalConfig` will only have a few fields. `FullConfig` will be extended to include a new section for structure generation, e.g., `generation: { "algorithm": "SQS", "parameters": {...} }`.
+**Class and API Definitions:**
 
-*   **`mlip_pipe.modules.a_structure_generator.StructureGenerator` (Abstract Base Class)**
-    *   An abstract base class with a single method: `generate(self, config) -> list[ase.Atoms]`. All specific generators will inherit from this, ensuring a consistent interface.
+1.  **`config/models.py`**: This new file will define the Pydantic models for both configuration tiers, creating a strict schema for our settings.
+    ```python
+    from pydantic import BaseModel, Field
+    from typing import List, Dict
 
-*   **`mlip_pipe.modules.a_structure_generator.SQSGenerator(StructureGenerator)`**
-    *   `generate(self, config)`: Implements the generation of SQS structures. It will parse the relevant configuration, construct a command-line call to an external SQS code, execute it, and parse the output files to create a list of ASE `Atoms` objects.
+    class MinimalInput(BaseModel):
+        elements: List[str]
+        composition: str | None = None
+        # ... other high-level goals ...
 
-*   **`mlip_pipe.modules.a_structure_generator.NMSGenerator(StructureGenerator)`**
-    *   `generate(self, config)`: Implements Normal Mode Sampling. It requires a reference structure and will contain the logic for calculating and applying displacements along normal modes.
+    class FullConfig(BaseModel):
+        system: Dict
+        simulation: Dict
+        dft_compute: Dict
+        mlip_training: Dict
 
-*   **`mlip_pipe.modules.a_structure_generator.GeneratorFactory`**
-    *   `get_generator(name: str) -> StructureGenerator`: A simple factory function that takes the algorithm name from the config and returns an instance of the corresponding concrete generator class.
+    # Example of a nested model for clarity
+    class DFTComputeConfig(BaseModel):
+        code: str
+        command: str
+        pseudopotentials: str
+        ecutwfc: float
+        # ... etc ...
+    ```
+
+2.  **`config/expander.py`**: This will house the `HeuristicEngine`, the core of the automation logic.
+    ```python
+    from .models import MinimalInput, FullConfig
+    from ..utils import material_analysis
+
+    class HeuristicEngine:
+        def __init__(self, user_input: MinimalInput):
+            self._input = user_input
+            self._bond_type = material_analysis.determine_bond_type(self._input.elements)
+
+        def expand(self) -> FullConfig:
+            """Generates the full configuration from the minimal user input."""
+            dft_params = self._get_dft_params()
+            # ... other logic ...
+            return FullConfig(...)
+
+        def _get_dft_params(self) -> Dict:
+            """Determines cutoffs, k-points etc. based on SSSP and element list."""
+            # ... logic to look up SSSP recommendations ...
+    ```
+
+3.  **`modules/a_structure_generator.py`**: The `StructureGenerator` class will encapsulate the different generation algorithms.
+    ```python
+    from typing import List
+    from ase import Atoms
+
+    class StructureGenerator:
+        def __init__(self, config: FullConfig):
+            self._config = config
+
+        def execute(self) -> List[Atoms]:
+            """Selects and runs the appropriate structure generation algorithm."""
+            structure_type = self._config.system['structure_type']
+            if structure_type == "alloy":
+                return self._generate_sqs()
+            elif structure_type == "molecule":
+                return self._generate_nms()
+            # ... other types ...
+
+        def _generate_sqs(self) -> List[Atoms]:
+            # ... logic to call a library like `icet` or a custom implementation ...
+
+        def _generate_nms(self) -> List[Atoms]:
+            # ... logic for Normal Mode Sampling ...
+    ```
+
+4.  **`orchestrator_cycle02.py`**: The orchestrator's logic will be updated to reflect the new workflow.
+    ```python
+    # Simplified example
+    def run_cycle02_workflow(config_path: str):
+        user_config = MinimalInput.parse_file(config_path)
+        engine = HeuristicEngine(user_config)
+        full_config = engine.expand()
+        full_config.write_to_file('exec_config_dump.yaml') # For reproducibility
+
+        generator = StructureGenerator(full_config)
+        initial_structures = generator.execute()
+
+        labeller = LabellingEngine(...)
+        trainer = TrainingEngine(...)
+        db_ids = []
+        for structure in initial_structures:
+            db_id = labeller.execute(structure)
+            db_ids.append(db_id)
+
+        trainer.execute(ids=db_ids)
+        print("Cycle 02 workflow complete.")
+    ```
+This design clearly separates the new responsibilities. The `HeuristicEngine` is solely responsible for configuration, while the `StructureGenerator` is solely responsible for creating `ase.Atoms` objects. The orchestrator coordinates these new modules with the existing ones from Cycle 01 in a clean, logical sequence.
 
 ## 4. Implementation Approach
 
-The implementation will be staged to build the new functionality before integrating it into the main pipeline.
+The implementation for Cycle 02 will proceed in a logical order, building the configuration system first, then the structure generation, and finally integrating them into the main workflow.
 
-1.  **Data Models:** First, update the Pydantic models in `data_models.py`. Define the schemas for `MinimalConfig` and add the new `generation` section to `FullConfig`.
+**Step 1: Implement the Two-Tier Configuration System**
+1.  **Pydantic Models:** The first task is to create the `config/models.py` file and define the `MinimalInput` and `FullConfig` Pydantic models. This establishes the data contract for the entire system's configuration. The `FullConfig` model will be detailed and comprehensive, covering every potential parameter.
+2.  **Heuristic Engine Scaffolding:** Create the `HeuristicEngine` class in `config/expander.py`. Initially, it will perform a simple, hardcoded expansion.
+3.  **Bond Type Determination:** Implement the `utils/material_analysis.py` module. This will contain the function `determine_bond_type` which takes a list of elements and uses `pymatgen` or a similar library to classify the system as 'alloy', 'ionic', etc., based on electronegativity differences. This will be thoroughly unit-tested.
+4.  **DFT Parameter Logic:** Implement the core logic within the `HeuristicEngine` to determine DFT parameters. This involves creating a data file (e.g., a JSON or YAML file) that contains SSSP protocol recommendations (cutoffs, pseudopotentials) for various elements. The engine will read this file, find the maximum required cutoff for the elements in the user's input, and populate the `DFTComputeConfig` part of the `FullConfig`.
 
-2.  **Config Expander:**
-    *   Start by implementing the `_determine_bond_type` heuristic. This will involve using `pymatgen` or a similar library. Write extensive unit tests for this classification logic, covering clear-cut cases (e.g., NaCl is ionic, FePt is an alloy, H2O is molecular) and edge cases.
-    *   Implement the main `expand_config` method. Write unit tests that provide a `MinimalConfig` and assert that the returned `FullConfig` object is populated with the correct, expected values for all fields. For example, for a Fe-containing system, `dft_config.magnetism` should be set to "ferromagnetic".
+**Step 2: Implement the Structure Generator (Module A)**
+1.  **Class Structure:** Create the `StructureGenerator` class in `modules/a_structure_generator.py`. The `execute` method will act as a dispatcher, calling private methods based on the `structure_type` from the configuration.
+2.  **SQS Implementation:** Implement the `_generate_sqs` method. This will likely involve using an external, well-tested library like `icet`. The implementation will focus on correctly calling `icet` with the composition and cell size specified in the `FullConfig` and converting the output back into a list of `ase.Atoms` objects. We will also add logic to apply random strains and perturbations to the generated SQS cells to increase diversity.
+3.  **NMS and AIRSS Implementation:** Implement the other generation methods (`_generate_nms`, `_generate_airss`). Similar to SQS, this will likely involve integrating with existing libraries or implementing well-known algorithms. For NMS, this would involve a preliminary geometry optimization and Hessian calculation using a cheap calculator before sampling along the normal modes.
 
-3.  **Structure Generators:**
-    *   Implement each generator class (`SQSGenerator`, `NMSGenerator`, etc.) one at a time.
-    *   For generators that wrap external tools (like `SQSGenerator`), the implementation will focus on correct command-line argument construction and robust output parsing. The unit tests for this class will mock the `subprocess.run` call and provide sample output files to test the parser.
-    *   For generators with internal logic (like `NMSGenerator`), the unit tests will verify the correctness of the physical calculations (e.g., ensuring the generated displacement vectors are orthogonal).
+**Step 3: Integration and Workflow Update**
+1.  **Update Orchestrator:** Modify the main workflow orchestrator (`orchestrator_cycle02.py`). The new logic will replace the manual loading of a structure file. It will now:
+    *   Load the `input.yaml`.
+    *   Instantiate and run the `HeuristicEngine` to get the `FullConfig`.
+    *   Save the `exec_config_dump.yaml` for logging and reproducibility.
+    *   Instantiate and run the `StructureGenerator`.
+    *   Loop through the returned list of structures, calling the `LabellingEngine` for each one.
+    *   Collect all the database IDs from the labelling step.
+    *   Call the `TrainingEngine` once with the complete list of IDs.
+2.  **Update CLI:** Create a new command-line entry point (`main_cycle02.py`) that takes the path to the minimal `input.yaml` as its primary argument.
 
-4.  **Factory and Orchestrator Integration:**
-    *   Implement the simple `GeneratorFactory`.
-    *   Modify the `Orchestrator` to call the `ConfigExpander` at the beginning of its run.
-    *   Add the logic to the `Orchestrator` to use the factory to get the correct generator and then call its `generate()` method.
-    *   The output of the `generate()` method (the list of `Atoms` objects) will then be fed into the existing labelling and training workflow from Cycle 01.
-
-5.  **End-to-End Integration Test:** Create a new integration test that starts from a minimal `input.yaml` (e.g., for FePt). The test will run the entire, extended pipeline: `ConfigExpander` -> `SQSGenerator` -> `QuantumEspressoRunner` -> `Trainer`. The test will assert that a final potential file is created and that no errors occurred during the process. This validates that all new and old components work together seamlessly.
+**Step 4: Testing**
+Throughout this process, testing will be paramount. Unit tests will be written for the `HeuristicEngine`'s decision logic (e.g., "given elements X and Y, the bond type should be Z"). The structure generation algorithms will be tested to ensure they produce valid `ase.Atoms` objects. Finally, new integration tests will be created to test the entire updated workflow, from a minimal `input.yaml` to a final trained MLIP, for a couple of different material types (e.g., an alloy and a molecule).
 
 ## 5. Test Strategy
 
-Testing for Cycle 02 is focused on the correctness of the heuristic logic and the output of the various generation algorithms.
+The testing for Cycle 02 must rigorously validate the new automation capabilities. The strategy will expand on Cycle 01's foundation, adding new unit tests for the heuristic logic and structure generation algorithms, and creating new, more comprehensive integration tests.
 
-**Unit Testing Approach (Min 300 words):**
-Unit tests will be critical for verifying the complex logic of the new components.
+**Unit Testing:**
 
-*   **`TestConfigExpander`:** This will be the most important test suite. We will create a series of test cases with different `input.yaml` contents.
-    *   **Alloy Test:** Input `{"elements": ["Fe", "Pt"]}`. Assert that the returned `FullConfig` has `generation.algorithm == "SQS"` and `dft.magnetism` is enabled.
-    *   **Molecule Test:** Input `{"elements": ["H", "O"]}`. Assert `generation.algorithm == "NMS"`.
-    *   **Ionic Test:** Input `{"elements": ["Na", "Cl"]}`. Assert `generation.algorithm == "AIRSS"`.
-    *   **Error Test:** Input an invalid element symbol. Assert that a `ValidationError` is raised.
-    Each test will check not just the high-level algorithm selection but also the low-level parameter defaults to ensure they are sensible.
+*   **`HeuristicEngine`:**
+    *   **Bond Type Logic:** A series of tests will be created to verify the `determine_bond_type` function. We will provide it with various lists of elements and assert that the correct type is returned (e.g., `['Fe', 'Pt']` -> `'alloy'`, `['Na', 'Cl']` -> `'ionic'`, `['H', 'O']` -> `'molecule'`).
+    *   **DFT Parameter Selection:** The logic for selecting DFT parameters will be tested. For a given list of elements, we will assert that the engine correctly identifies the maximum required `ecutwfc` from its SSSP data file.
+    *   **Configuration Expansion:** We will test the main `expand` method by providing a `MinimalInput` object and asserting that the resulting `FullConfig` object is fully populated with plausible, non-null values in all required fields.
 
-*   **`TestGenerators`:** Each generator will have its own test file.
-    *   **`TestSQSGenerator`:** We will mock the subprocess call to the external SQS code. We will provide sample text output from a successful SQS run and assert that our Python parser correctly converts it into a list of ASE `Atoms` objects with the right compositions and structures.
-    *   **`TestNMSGenerator`:** We will provide a simple molecule (e.g., H2O) and a pre-computed Hessian matrix. The test will run the `generate` method and assert that the returned structures have been displaced from the original geometry and that the number of generated structures is correct.
-    *   **`TestAIRSSGenerator`:** This test will verify that the generated structures have the correct density and that atoms are not placed too close to each other, respecting the minimum distance constraints.
+*   **`StructureGenerator` (Module A):**
+    *   **Algorithm Dispatching:** We will test the `execute` method's dispatching logic. By providing a `FullConfig` with `structure_type` set to 'alloy', we will use `pytest-mock` to assert that the `_generate_sqs` method was called, and not the other generation methods.
+    *   **Structure Validity:** For each generation method (`_generate_sqs`, `_generate_nms`, etc.), we will run the function and assert that it returns a non-empty list, and that every item in the list is a valid `ase.Atoms` object with the correct chemical elements and non-zero cell volume. We will not test the physical correctness of the algorithm itself (as that is the job of libraries like `icet`), but rather that our integration with it is working.
 
-**Integration Testing Approach (Min 300 words):**
-The primary integration test will validate the new, fully automated workflow from the user's starting point (`input.yaml`).
+**Integration Testing:**
 
-*   **`test_full_pipeline_from_minimal_config`:**
-    1.  **Setup:** Create a temporary directory containing a minimal `input.yaml` for a simple binary alloy like AlNi.
-    2.  **Execution:** Run the main orchestrator, pointing it to this `input.yaml`.
-    3.  **Process:** The test will execute the entire pipeline:
-        *   `ConfigExpander` should run and produce a `exec_config_dump.yaml`.
-        *   `SQSGenerator` should be selected and run, producing a set of AlNi structures.
-        *   `QuantumEspressoRunner` should label these structures (using a real QE call for this integration test).
-        *   `Trainer` should train an MLIP on this DFT data.
-    4.  **Assertions:**
-        *   Assert that the `exec_config_dump.yaml` file exists and contains the expected configuration (e.g., SQS algorithm).
-        *   Assert that the ASE database is created and populated with multiple labelled AlNi structures.
-        *   Assert that the final MLIP file is created.
-        *   Assert that the entire process completes with an exit code of 0.
+*   **Test 1: Full Workflow from `input.yaml` (Alloy):**
+    *   **Objective:** Verify the entire end-to-end workflow for a metallic alloy system.
+    *   **Setup:** Create a minimal `input.yaml` for a binary alloy like CuAu: `{elements: ['Cu', 'Au'], composition: 'CuAu'}`.
+    *   **Execution:** Run the main Cycle 02 workflow from this input file.
+    *   **Verification:**
+        1.  Assert that an `exec_config_dump.yaml` file is created and that its `system.structure_type` is 'alloy'.
+        2.  Assert that the ASE database is populated with multiple structures (e.g., > 5).
+        3.  Assert that a final trained model file is created.
+        4.  This test validates the SQS path through the system.
 
-This single, comprehensive test ensures that the data contracts between the new components (`ConfigExpander`, `Module A`) and the existing components (`Module C`, `Module D`) are correct and that the enhanced orchestrator logic works as designed. It provides a high level of confidence in the system's newfound autonomy.
+*   **Test 2: Full Workflow from `input.yaml` (Molecule):**
+    *   **Objective:** Verify the entire end-to-end workflow for a molecular system.
+    *   **Setup:** Create a minimal `input.yaml` for a simple molecule like water: `{elements: ['H', 'O'], composition: 'H2O'}`.
+    *   **Execution:** Run the main Cycle 02 workflow.
+    *   **Verification:**
+        1.  Assert that the `exec_config_dump.yaml` correctly identifies the system as 'molecule'.
+        2.  Assert that the database contains multiple molecular configurations.
+        3.  Assert that a final model is trained.
+        4.  This test validates the Normal Mode Sampling path.
+
+*   **Test 3: Invalid User Input Handling:**
+    *   **Objective:** Ensure the system provides a clear error for invalid user input.
+    *   **Setup:** Create an `input.yaml` with a fictitious element: `{elements: ['Xx', 'Yy']}`.
+    *   **Execution:** Run the main workflow.
+    *   **Verification:** The system should not crash with an unhandled exception. It should exit gracefully and print an informative error message to the user, such as "Error: Element 'Xx' not recognized or not supported by the current DFT protocol." This tests the input validation within the `HeuristicEngine`.
