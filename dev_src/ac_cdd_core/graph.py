@@ -221,50 +221,57 @@ class GraphBuilder:
                 return str(p)
 
         # Determine if this is Initial Creation (Jules) or Fix Loop (Aider)
-        if iteration_count > 1:
-            # --- FIX LOOP (Aider) ---
-            logger.info("Mode: Aider Fixer (Refinement/Repair)")
-            audit_feedback = state.get("audit_feedback")
-
+        if iteration_count > 1 and state.get("jules_session_name"):
+            # --- FIX LOOP (Jules Reuse) ---
+            logger.info(f"Mode: Jules Fixer (Refinement/Repair) - Resuming Session {state['jules_session_name']}")
+            audit_feedback = state.get("audit_feedback", [])
+            
             # Get Shared Sandbox (Persistent)
             runner = await self._get_shared_sandbox()
-
-            # Gather files to fix
-            src_files = list(Path(settings.paths.src).rglob("*.py"))
-            test_files = list(Path(settings.paths.tests).rglob("*.py"))
-            # Ensure relative paths for remote execution
-            files_to_edit = [_to_rel(f) for f in src_files + test_files]
 
             # Instruction
             if audit_feedback:
                 feedback_text = "\n".join(f"- {issue}" for issue in audit_feedback)
                 instruction = (
-                    f"You are the Lead Engineer fixing issues found during audit.\n"
-                    f"Fix the following issues strictly:\n\n{feedback_text}\n\n"
-                    f"Verify your changes with tests."
+                    f"The previous implementation failed the audit.\n"
+                    f"Please fix the following issues strictly:\n\n{feedback_text}\n\n"
+                    f"Update the code and the PR."
                 )
             else:
-                instruction = (
-                    "You are the Lead Engineer. The previous audit passed, "
-                    "but you must now OPTIMIZE the code.\n"
-                    "Refactor for performance, readability, and better typing."
+                 instruction = (
+                    "The previous audit passed contextually, but we are doing another iteration.\n"
+                    "Please review and optimize the code further."
                 )
 
             try:
-                # Execute Remote Aider
-                result = await self.aider_client.run_fix(
-                    files=files_to_edit, instruction=instruction, runner=runner
+                # Continue Jules Session
+                result = await self.jules_client.continue_session(
+                    session_name=state["jules_session_name"],
+                    prompt=instruction
                 )
-                return {
-                    "coder_report": {"tool": "aider", "output": result},
-                    "current_phase": "coder_complete",
-                    "iteration_count": iteration_count,
-                }
+                
+                pr_url = result.get("pr_url")
+                if pr_url:
+                    logger.info(f"Jules updated PR: {pr_url}")
+                    # Switch to the PR branch to test the changes
+                    await self.git.checkout_pr(pr_url)
+                    
+                    return {
+                        "coder_report": result,
+                        "current_phase": "coder_complete",
+                        "iteration_count": iteration_count,
+                        # maintain session info
+                        "jules_session_name": state["jules_session_name"],
+                        "pr_url": pr_url
+                    }
+                else:
+                    return {"error": "Jules finished but lost track of PR.", "current_phase": "coder_failed"}
+
             except Exception as e:
                 return {"error": str(e), "current_phase": "coder_failed"}
 
         else:
-            # --- INITIAL CREATION (Jules) ---
+            # --- INITIAL CREATION (Jules New Session) ---
             logger.info("Mode: Jules Creator (Initial Impl)")
 
             # Get Shared Sandbox
@@ -292,12 +299,21 @@ class GraphBuilder:
                 )
 
                 pr_url = result.get("pr_url")
+                session_name = result.get("session_name")
+
                 if pr_url:
                     logger.info(f"Coder PR created: {pr_url}")
+                    
+                    # Switch to the PR branch to test the changes
+                    # DO NOT MERGE YET (as per user request)
+                    await self.git.checkout_pr(pr_url)
+
                     return {
                         "coder_report": result,
                         "current_phase": "coder_complete",
                         "iteration_count": iteration_count,
+                        "jules_session_name": session_name,
+                        "pr_url": pr_url,
                     }
                 else:
                     msg = (
@@ -468,6 +484,15 @@ class GraphBuilder:
     async def commit_coder_node(self, state: CycleState) -> dict[str, Any]:
         """Commit implementation."""
         cycle_id = state["cycle_id"]
+        pr_url = state.get("pr_url")
+
+        if pr_url:
+            # Now we merge the PR to finalize the cycle
+            logger.info("Audit Passed. Merging PR to main branch...")
+            await self.git.merge_pr(pr_url)
+            # Pull to ensure local is up to date with the merge
+            await self.git.pull_changes()
+
         await self.git.commit_changes(f"feat(cycle{cycle_id}): implement and verify features")
         return {"current_phase": "complete"}
 
@@ -509,14 +534,7 @@ class GraphBuilder:
         def check_coder(state: CycleState) -> Literal["run_tests", "end"]:
             if state.get("error"):
                 return "end"
-            # If iteration is 1, we just created a PR. We stop here to let user merge.
-            # But the graph logic might expect to continue.
-            # In "Jules Mode" (iter 1), we treat PR creation as success and end.
-            # In "Aider Mode" (iter > 1), we continue to tests.
-            iteration_count = state.get("iteration_count", 1)
-            if iteration_count == 1:
-                return "end" # User must merge PR and restart/pull for next steps.
-
+            # Always proceed to tests now, as we handle "fixing" via loop
             return "run_tests"
 
         workflow.add_conditional_edges(

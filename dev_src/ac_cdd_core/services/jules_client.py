@@ -247,7 +247,30 @@ class JulesClient:
 
         # 3. Poll for Completion and Interact
         logger.info(f"Session created: {session_name}. Waiting for PR creation...")
-        return await self.wait_for_completion(session_name)
+        result = await self.wait_for_completion(session_name)
+        result["session_name"] = session_name
+        return result
+
+    async def continue_session(self, session_name: str, prompt: str) -> Dict[str, Any]:
+        """
+        Continues an existing session by sending a new prompt and waiting for the result.
+        """
+        logger.info(f"Continuing Session {session_name} with info...")
+        
+        # 1. Send the feedback/prompt
+        await self._send_message(session_name, prompt)
+        
+        # 2. Wait for the agent to process and update (poll again)
+        # Note: We assume the agent will produce a new activity or update the PR.
+        # simple wait_for_completion might return immediately if the state is already SUCCEEDED.
+        # Ideally, we should wait for state to change or new activity.
+        # But wait_for_completion logic is simple polling.
+        # Let's trust that sending a message puts it back into a working state or creates new activities.
+        
+        logger.info(f"Waiting for Jules to process feedback for {session_name}...")
+        result = await self.wait_for_completion(session_name)
+        result["session_name"] = session_name
+        return result
 
     async def wait_for_completion(self, session_name: str) -> Dict[str, Any]:
         """

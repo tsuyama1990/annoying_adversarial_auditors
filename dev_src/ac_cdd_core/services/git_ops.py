@@ -110,6 +110,17 @@ class GitManager:
         except Exception as e:
             logger.warning(f"Failed to auto-merge PR. Please merge manually. Error: {e}")
 
+    async def checkout_pr(self, pr_url: str) -> None:
+        """
+        Checks out the Pull Request branch using GitHub CLI.
+        """
+        logger.info(f"Checking out PR: {pr_url}...")
+        await self.runner.run_command(
+            [self.gh_cmd, "pr", "checkout", pr_url, "--force"],
+            check=True,
+        )
+        logger.info(f"Checked out PR {pr_url} successfully.")
+
     async def pull_changes(self) -> None:
         """
         Pulls changes from the remote repository.
