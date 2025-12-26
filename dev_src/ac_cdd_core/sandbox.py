@@ -70,13 +70,21 @@ class SandboxRunner:
         command_str = " ".join(cmd)
         logger.info(f"[Sandbox] Running: {command_str}")
 
-        exec_result = sandbox.commands.run(
-            command_str, cwd=self.cwd, envs=env or {}, timeout=settings.sandbox.timeout
-        )
-
-        stdout = exec_result.stdout
-        stderr = exec_result.stderr
-        exit_code = exec_result.exit_code or 0
+        try:
+            exec_result = sandbox.commands.run(
+                command_str, cwd=self.cwd, envs=env or {}, timeout=settings.sandbox.timeout
+            )
+            stdout = exec_result.stdout
+            stderr = exec_result.stderr
+            exit_code = exec_result.exit_code or 0
+        except Exception as e:
+            # Handle e2b's CommandExitException which might be raised automatically
+            if hasattr(e, "exit_code") and hasattr(e, "stdout") and hasattr(e, "stderr"):
+                stdout = e.stdout
+                stderr = e.stderr
+                exit_code = e.exit_code
+            else:
+                raise e
 
         if check and exit_code != 0:
             raise RuntimeError(
