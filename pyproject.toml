@@ -28,6 +28,10 @@ dependencies = [
     "requests>=2.32.5",
     "httpx>=0.28.1",
     "google-auth>=2.43.0",
+    "ase",
+    "pyyaml",
+    "mace-torch",
+    "click",
 ]
 
 [tool.uv]
@@ -69,7 +73,7 @@ ignore = ["S101"]
 "tests/**/*.py" = ["S101"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=dev_src --cov-report=term-missing"
+addopts = "--cov=dev_src --cov=src --cov-report=term-missing"
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
