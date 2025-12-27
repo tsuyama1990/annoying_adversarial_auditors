@@ -70,7 +70,7 @@ class SandboxConfig(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
     template: str | None = None  # None uses default (base)
-    timeout: int = 300  # Default timeout in seconds
+    timeout: int = 3600  # Default timeout in seconds
     cwd: str = "/home/user"
     dirs_to_sync: list[str] = ["src", "tests", "contracts", "dev_documents", "dev_src"]
     files_to_sync: list[str] = ["pyproject.toml", "uv.lock", ".auditignore"]

@@ -400,7 +400,29 @@ class GraphBuilder:
                       logger.error(f"Failed to parse JSON from string: {e}")
                       return {"error": f"UAT Analysis format error: {analysis}", "current_phase": "uat_failed"}
              else:
-                 return {"error": f"UAT Analysis returned unstructured text: {analysis}", "current_phase": "uat_failed"}
+                 # Fallback: Try regex parsing for common LLM text formats (e.g. Llama)
+                 # Expecting lines like: "**Result:** Fail" or "- Result: Pass"
+                 # And content starting with "### Evaluation"
+                 verdict = "FAIL" # Default to fail if we can't parse
+                 summary = analysis
+
+                 # 1. Regex for Verdict
+                 # Matches: **Result:** Pass, - Result: Pass, Result: Pass (case insensitive)
+                 verdict_match = re.search(r"(?:Result|Verdict)\s*:?\**\s*(Pass|Fail)", analysis, re.IGNORECASE)
+                 if verdict_match:
+                     found = verdict_match.group(1).upper()
+                     if found == "PASS":
+                         verdict = "PASS"
+                 
+                 # 2. Construct fallback object
+                 # We treat the entire text as the summary if structured parsing fails
+                 analysis = UatAnalysis(
+                     verdict=verdict,
+                     summary=summary,
+                     test_results=[] # We can't easily parse structured test results from unstructured text reliably
+                 )
+                 logger.info(f"Parsed unstructured QA output: Verdict={verdict}")
+
 
         logger.info(f"UAT Analysis: {analysis.verdict} - {analysis.summary[:100]}...")
 
