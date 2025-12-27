@@ -50,7 +50,7 @@ class JulesConfig(BaseSettings):
     # Default to regular command name 'jules'
     executable: str = "jules"
     timeout_seconds: int = 7200
-    polling_interval_seconds: int = 30
+    polling_interval_seconds: int = 120
 
 
 class ToolsConfig(BaseSettings):
@@ -85,12 +85,12 @@ class AgentsConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     # Models
     auditor_model: str = Field(default="gemini-2.5-pro", validation_alias="SMART_MODEL")
-    qa_analyst_model: str = Field(default="gemini-2.0-flash-exp", validation_alias="FAST_MODEL")
+    qa_analyst_model: str = Field(default="gemini-2.5-flash", validation_alias="FAST_MODEL")
 
 class AiderConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
     smart_model: str = Field(default="claude-3-5-sonnet", description="Model for editing code (Fixer)")
-    fast_model: str = Field(default="gemini-2.0-flash-exp", description="Model for reading/auditing code")
+    fast_model: str = Field(default="gemini-2.5-flash", description="Model for reading/auditing code")
 
     # Prompts (Content loaded via _read_prompt)
     auditor: str = Field(
