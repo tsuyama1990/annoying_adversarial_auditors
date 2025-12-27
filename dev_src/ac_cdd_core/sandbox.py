@@ -64,29 +64,61 @@ class SandboxRunner:
         """
         Runs a shell command in the sandbox.
         """
-        sandbox = await self._get_sandbox()
+        # --- 修正: リトライロジックの追加 ---
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                # Sandboxを取得 (初回または再作成)
+                sandbox = await self._get_sandbox()
 
-        # Ensure latest files are there before running
-        await self._sync_to_sandbox(sandbox)
+                # ファイル同期 (最新コードを反映)
+                # Note: self._sync_to_sandbox needs to accept sandbox arg or use self.sandbox
+                # The provided code snippet uses 'sandbox' var which is correct.
+                await self._sync_to_sandbox(sandbox)
 
-        command_str = " ".join(cmd)
-        logger.info(f"[Sandbox] Running: {command_str}")
+                command_str = " ".join(cmd)
+                logger.info(f"[Sandbox] Running (Attempt {attempt+1}): {command_str}")
 
-        try:
-            exec_result = sandbox.commands.run(
-                command_str, cwd=self.cwd, envs=env or {}, timeout=settings.sandbox.timeout
-            )
-            stdout = exec_result.stdout
-            stderr = exec_result.stderr
-            exit_code = exec_result.exit_code or 0
-        except Exception as e:
-            # Handle e2b's CommandExitException which might be raised automatically
-            if hasattr(e, "exit_code") and hasattr(e, "stdout") and hasattr(e, "stderr"):
-                stdout = e.stdout
-                stderr = e.stderr
-                exit_code = e.exit_code
-            else:
-                raise e
+                exec_result = sandbox.commands.run(
+                    command_str, cwd=self.cwd, envs=env or {}, timeout=settings.sandbox.timeout
+                )
+                stdout = exec_result.stdout
+                stderr = exec_result.stderr
+                exit_code = exec_result.exit_code or 0
+                
+                # 成功したらループ終了
+                break
+
+            except Exception as e:
+                # タイムアウトやSandbox消失のエラーか判定
+                err_msg = str(e).lower()
+                is_sandbox_error = "sandbox was not found" in err_msg or "timeout" in err_msg
+                
+                if is_sandbox_error and attempt < max_retries:
+                    logger.warning(f"Sandbox disconnection detected: {e}. Re-initializing sandbox...")
+                    
+                    # 既存のインスタンスを破棄
+                    if self.sandbox:
+                        try:
+                            self.sandbox.kill()
+                        except:
+                            pass
+                        self.sandbox = None
+                    
+                    # 次のループで _get_sandbox() が呼ばれ、新規作成＆install_cmdが実行される
+                    continue
+                else:
+                    # コマンド自体の失敗(exit_code)は例外にならない場合もあるが、
+                    # e2bのエラーオブジェクトの場合は中身を取り出してbreak
+                    if hasattr(e, "exit_code") and hasattr(e, "stdout") and hasattr(e, "stderr"):
+                        stdout = e.stdout
+                        stderr = e.stderr
+                        exit_code = e.exit_code
+                        break 
+                    
+                    # 解決不能なエラーはそのまま投げる
+                    raise e
+        # ----------------------------------
 
         if check and exit_code != 0:
             raise RuntimeError(

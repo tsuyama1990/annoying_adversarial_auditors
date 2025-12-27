@@ -74,7 +74,7 @@ class SandboxConfig(BaseSettings):
     cwd: str = "/home/user"
     dirs_to_sync: list[str] = ["src", "tests", "contracts", "dev_documents", "dev_src"]
     files_to_sync: list[str] = ["pyproject.toml", "uv.lock", ".auditignore"]
-    install_cmd: str = "pip install uv"
+    install_cmd: str = "pip install uv pytest python-dotenv aider-chat && pip install -e ."
     test_cmd: list[str] = ["uv", "run", "pytest"]
     lint_check_cmd: list[str] = ["uv", "run", "ruff", "check", "--fix", "."]
     type_check_cmd: list[str] = ["uv", "run", "mypy", "src/"]
