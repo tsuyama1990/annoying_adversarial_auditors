@@ -433,9 +433,14 @@ class GraphBuilder:
         )
 
         if verdict == "FAIL":
-            return {"error": f"UAT Failed: {analysis.summary}", "current_phase": "uat_failed"}
+            # Don't return 'error' as that ends the graph.
+            # Instead, pass feedback to the next node (Auditor->Coder) to facilitate a fix loop.
+            return {
+                "current_phase": "uat_failed",
+                "uat_feedback": [f"UAT Failed: {analysis.summary}"]
+            }
 
-        return {"current_phase": "uat_passed", "error": None}
+        return {"current_phase": "uat_passed", "error": None, "uat_feedback": []}
 
     async def auditor_node(self, state: CycleState) -> dict[str, Any]:
         """Strict Auditor Node (Aider)."""
@@ -467,6 +472,13 @@ class GraphBuilder:
             instruction = "Review the code strictly."
 
         instruction += f"\n\n(Iteration {iteration_count})"
+        
+        # Inject UAT Feedback if present
+        uat_feedback = state.get("uat_feedback", [])
+        if uat_feedback:
+             instruction += "\n\n=== CRITICAL ISSUE: UAT FAILED ===\n"
+             instruction += "The functional tests (UAT) failed with the following report. You MUST address this:\n"
+             instruction += "\n".join(uat_feedback)
 
         # 2. Run Audit via Aider (Remote)
         output = await self.aider_client.run_audit(
@@ -496,6 +508,9 @@ class GraphBuilder:
                 extracted_text = output.strip()
 
         feedback_lines = [line.strip() for line in extracted_text.split("\n") if line.strip()]
+        
+        # Combine UAT feedback with Auditor feedback for the next Coder session
+        combined_feedback = uat_feedback + feedback_lines
 
         dummy_result = AuditResult(
             is_approved=False,
@@ -507,7 +522,7 @@ class GraphBuilder:
         return {
             "audit_result": dummy_result,
             "current_phase": "audit_complete",
-            "audit_feedback": feedback_lines,
+            "audit_feedback": combined_feedback,
         }
 
     async def commit_coder_node(self, state: CycleState) -> dict[str, Any]:
