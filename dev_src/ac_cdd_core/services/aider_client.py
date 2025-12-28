@@ -41,7 +41,7 @@ class AiderClient:
         cmd = [
             "aider",
             "--model", self.fast_model,
-            "--read-only",
+            # "--read-only",  # REMOVED: Deprecated/Unsupported in newer aider versions or incompatible with certain modes
             "--no-auto-commits",
             "--message", instruction,
         ]
@@ -60,10 +60,23 @@ class AiderClient:
             # Remote: assume files are synced
             cmd.extend(files)
 
+        # Prepare Environment Variables for Aider (API Keys)
+        # We need to forward local keys to the sandbox environment
+        env_vars = {}
+        if settings.OPENROUTER_API_KEY:
+            env_vars["OPENROUTER_API_KEY"] = settings.OPENROUTER_API_KEY
+        if settings.JULES_API_KEY: 
+             # Just in case Aider uses it or generic google key
+             env_vars["GOOGLE_API_KEY"] = settings.JULES_API_KEY
+        if os.getenv("ANTHROPIC_API_KEY"):
+            env_vars["ANTHROPIC_API_KEY"] = os.getenv("ANTHROPIC_API_KEY")
+        if os.getenv("OPENAI_API_KEY"):
+            env_vars["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+
         try:
             if runner:
-                # Run in Sandbox
-                stdout, stderr, code = await runner.run_command(cmd, check=False)
+                # Run in Sandbox with ENV
+                stdout, stderr, code = await runner.run_command(cmd, env=env_vars, check=False)
                 if code != 0:
                      logger.warning(f"Remote Aider audit returned code {code}: {stderr}")
                 return stdout

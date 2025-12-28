@@ -89,8 +89,8 @@ class AgentsConfig(BaseSettings):
 
 class AiderConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
-    smart_model: str = Field(default="claude-3-5-sonnet", description="Model for editing code (Fixer)")
-    fast_model: str = Field(default="gemini-2.5-flash", description="Model for reading/auditing code")
+    smart_model: str = Field(default="claude-3-5-sonnet", description="Model for editing code (Fixer)", validation_alias="SMART_MODEL")
+    fast_model: str = Field(default="gemini-2.5-flash", description="Model for reading/auditing code", validation_alias="FAST_MODEL")
 
     # Prompts (Content loaded via _read_prompt)
     auditor: str = Field(
