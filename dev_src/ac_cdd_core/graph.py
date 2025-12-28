@@ -515,8 +515,7 @@ class GraphBuilder:
         dummy_result = AuditResult(
             is_approved=False,
             critical_issues=feedback_lines,
-            minor_issues=[],
-            score=0,
+            suggestions=[],
         )
 
         return {
