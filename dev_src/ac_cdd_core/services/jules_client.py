@@ -151,6 +151,13 @@ class JulesClient:
         # Import Manager Agent lazily to avoid circular deps if any
         from ac_cdd_core.agents import manager_agent
         self.manager_agent = manager_agent
+        
+        # Instantiate internal API client for delegation
+        self.api_client = JulesApiClient(api_key=self.credentials.token if self.credentials else settings.JULES_API_KEY)
+
+    def list_activities(self, session_id_path: str) -> List[Dict[str, Any]]:
+        """Delegates activity listing to the API Client."""
+        return self.api_client.list_activities(session_id_path)
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
@@ -455,12 +462,17 @@ class JulesClient:
                 await asyncio.sleep(self.poll_interval)
 
 
+
     async def _send_message(self, session_url: str, content: str):
         """
         Sends a message to the active session.
         Endpoint: POST /{session_name}:sendMessage
         Payload: { "prompt": "..." }
         """
+        if not session_url.startswith("http"):
+            # If passed a relative name like "sessions/...", prepend base
+            session_url = f"{self.base_url}/{session_url}" if not session_url.startswith("/") else f"{self.base_url}{session_url}"
+
         url = f"{session_url}:sendMessage"
         payload = {"prompt": content}
 

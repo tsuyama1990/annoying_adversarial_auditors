@@ -76,7 +76,10 @@ class SandboxRunner:
                 # The provided code snippet uses 'sandbox' var which is correct.
                 await self._sync_to_sandbox(sandbox)
 
-                command_str = " ".join(cmd)
+                # Save join for logging, but use shlex for safety if we were passing string
+                # e2b runs string via /bin/bash -c "cmd" usually.
+                import shlex
+                command_str = shlex.join(cmd)
                 logger.info(f"[Sandbox] Running (Attempt {attempt+1}): {command_str}")
 
                 exec_result = sandbox.commands.run(
@@ -104,6 +107,7 @@ class SandboxRunner:
                         except:
                             pass
                         self.sandbox = None
+                        self._last_sync_hash = None  # Force re-sync on new sandbox definition
                     
                     # 次のループで _get_sandbox() が呼ばれ、新規作成＆install_cmdが実行される
                     continue
