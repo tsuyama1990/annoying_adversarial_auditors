@@ -41,7 +41,6 @@ class AiderClient:
         cmd = [
             "aider",
             "--model", self.fast_model,
-            # "--read-only",  # REMOVED: Deprecated/Unsupported in newer aider versions or incompatible with certain modes
             "--no-auto-commits",
             "--message", instruction,
         ]
@@ -61,26 +60,27 @@ class AiderClient:
             cmd.extend(files)
 
         # Prepare Environment Variables for Aider (API Keys)
-        # We need to forward local keys to the sandbox environment
-        env_vars = {}
-        if settings.OPENROUTER_API_KEY:
-            env_vars["OPENROUTER_API_KEY"] = settings.OPENROUTER_API_KEY
-        if settings.JULES_API_KEY: 
-             # Just in case Aider uses it or generic google key
-             env_vars["GOOGLE_API_KEY"] = settings.JULES_API_KEY
-             # Litellm often prefers GEMINI_API_KEY for AI Studio (non-Vertex) models
-             env_vars["GEMINI_API_KEY"] = settings.JULES_API_KEY
-        if os.getenv("ANTHROPIC_API_KEY"):
-            env_vars["ANTHROPIC_API_KEY"] = os.getenv("ANTHROPIC_API_KEY")
-        if os.getenv("OPENAI_API_KEY"):
-            env_vars["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+        # STRICT PASS-THROUGH: We pass only specific keys if they exist in host environment.
+        # This allows the user to control exactly what keys Aider has access to via their .env
+        allowed_keys = [
+            "OPENROUTER_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+        ]
+        env_vars = {k: os.environ[k] for k in allowed_keys if k in os.environ}
 
         try:
             if runner:
                 # Run in Sandbox with ENV
                 stdout, stderr, code = await runner.run_command(cmd, env=env_vars, check=False)
+                
                 if code != 0:
-                     logger.warning(f"Remote Aider audit returned code {code}: {stderr}")
+                    logger.error(f"Aider audit failed (Exit {code}). Stderr: {stderr}")
+                    return f"SYSTEM_ERROR: Aider failed to run (Exit Code {code}). Stderr: {stderr}"
+                
                 return stdout
             else:
                 # Local Execution (Fallback)
@@ -91,12 +91,14 @@ class AiderClient:
                     ),
                 )
                 if result.returncode != 0:
-                    logger.warning(f"Aider audit returned non-zero exit code: {result.stderr}")
+                    logger.error(f"Aider audit failed (Exit {result.returncode}). Stderr: {result.stderr}")
+                    return f"SYSTEM_ERROR: Aider failed to run (Exit Code {result.returncode}). Stderr: {result.stderr}"
+                
                 return result.stdout
 
         except Exception as e:
             logger.error(f"Aider audit failed: {e}")
-            return f"Audit failed due to internal error: {e}"
+            return f"SYSTEM_ERROR: Aider audit failed due to internal error: {e}"
 
     async def run_fix(
         self, files: list[str], instruction: str, runner: Optional["SandboxRunner"] = None
@@ -124,14 +126,25 @@ class AiderClient:
         else:
             cmd.extend(files)
 
+        # STRICT PASS-THROUGH (Same as audit)
+        allowed_keys = [
+            "OPENROUTER_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+        ]
+        env_vars = {k: os.environ[k] for k in allowed_keys if k in os.environ}
+
         try:
             if runner:
                 # Run in Sandbox
-                stdout, stderr, code = await runner.run_command(cmd, check=False)
+                stdout, stderr, code = await runner.run_command(cmd, env=env_vars, check=False)
 
                 if code != 0:
-                    logger.warning(f"Remote Aider fix returned code {code}: {stderr}")
-                    return f"Fix failed: {stderr}"
+                    logger.error(f"Aider fix failed (Exit {code}). Stderr: {stderr}")
+                    return f"SYSTEM_ERROR: Aider failed to run (Exit Code {code}). Stderr: {stderr}"
 
                 # Sync back changes from sandbox to local
                 await runner.sync_from_sandbox()
@@ -147,11 +160,11 @@ class AiderClient:
                 )
 
                 if result.returncode != 0:
-                    logger.warning(f"Aider fix returned non-zero exit code: {result.stderr}")
-                    return f"Fix failed: {result.stderr}"
+                    logger.error(f"Aider fix failed (Exit {result.returncode}). Stderr: {result.stderr}")
+                    return f"SYSTEM_ERROR: Aider failed to run (Exit Code {result.returncode}). Stderr: {result.stderr}"
 
                 return result.stdout
 
         except Exception as e:
             logger.error(f"Aider fix failed: {e}")
-            return f"Fix failed due to internal error: {e}"
+            return f"SYSTEM_ERROR: Aider fix failed due to internal error: {e}"

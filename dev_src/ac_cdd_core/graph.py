@@ -509,6 +509,29 @@ class GraphBuilder:
 
         logger.info(f"Audit Round {iteration_count} Complete.")
 
+        # Check for System Error (Infrastructure Failure)
+        if output.startswith("SYSTEM_ERROR"):
+            logger.error(f"AUDIT SYSTEM ERROR DETECTED: {output}")
+            
+            # Create a clean failure result
+            dummy_result = AuditResult(
+                is_approved=False,
+                critical_issues=["Internal System Error during Audit. Please check logs."],
+                suggestions=[],
+            )
+            
+            # CRITICAL: We pass a sanitized error message to feedback, 
+            # ensuring we DO NOT pass the raw stack trace/stderr to the coder.
+            sanitized_feedback = uat_feedback + ["Internal System Error during Audit. Please check logs."]
+            
+            return {
+                "audit_result": dummy_result,
+                "current_phase": "audit_system_error",
+                "audit_feedback": sanitized_feedback,
+                # Optionally set error to help debugging, though check_audit implementation dictates flow
+                "error": "Audit System Error" 
+            }
+
         # 3. Parse Output for Structured Report
         marker_start = "=== AUDIT REPORT START ==="
         marker_end = "=== AUDIT REPORT END ==="
