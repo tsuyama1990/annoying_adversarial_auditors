@@ -241,7 +241,8 @@ class GraphBuilder:
                 "current_phase": "coder_complete_resumed",
                 "iteration_count": iteration_count,
                 "jules_session_name": state.get("jules_session_name"),
-                "pr_url": pr_url
+                "pr_url": pr_url,
+                "resume_mode": False  # Consume the resume flag so subsequent iterations don't loop
             }
 
         # Determine if this is Initial Creation (Jules) or Fix Loop (Aider)
