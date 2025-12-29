@@ -391,6 +391,13 @@ class GraphBuilder:
         def is_py(f: str) -> bool:
             return f.endswith(".py")
 
+        cwd = Path.cwd()
+        def _to_rel(p: Path) -> str:
+            try: 
+                return str(p.relative_to(cwd))
+            except ValueError:
+                return str(p)
+
         files_to_audit = set()
         
         # Always include root Configs
@@ -411,13 +418,6 @@ class GraphBuilder:
             src_files = list(Path(settings.paths.src).rglob("*.py"))
             test_files = list(Path(settings.paths.tests).rglob("*.py"))
             contract_files = list(Path(settings.paths.contracts_dir).rglob("*.py")) if settings.paths.contracts_dir else []
-            
-            cwd = Path.cwd()
-            def _to_rel(p: Path) -> str:
-                try: 
-                    return str(p.relative_to(cwd))
-                except ValueError:
-                    return str(p)
             
             for f in src_files + test_files + contract_files:
                 files_to_audit.add(_to_rel(f))
