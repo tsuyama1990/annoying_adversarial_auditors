@@ -63,7 +63,8 @@ async def main():
 
         # 3. Conduct Review
         with console.status("[bold green]Running Auditor (Aider) in Sandbox..."):
-            instruction = Path(settings.paths.templates / "AUDITOR_INSTRUCTION.md").read_text() if (Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md").exists() else "Review strictly."
+            template_p = Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md"
+            instruction = template_p.read_text() if template_p.exists() else "Review strictly."
             instruction += "\n\n(Single Review Mode: Provide comprehensive feedback.)"
             
             # Using AiderClient
