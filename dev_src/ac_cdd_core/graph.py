@@ -506,8 +506,6 @@ class GraphBuilder:
         output = await self.llm_reviewer.review_code(
             files=files_content, 
             instruction=instruction, 
-            files=files_content, 
-            instruction=instruction, 
             model=model_to_use
         )
         logger.info(f"LLM Response received (Length: {len(output)})")
