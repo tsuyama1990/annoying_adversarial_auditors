@@ -77,7 +77,7 @@ class SandboxConfig(BaseSettings):
     cwd: str = "/home/user"
     dirs_to_sync: list[str] = ["src", "tests", "contracts", "dev_documents", "dev_src"]
     files_to_sync: list[str] = ["pyproject.toml", "uv.lock", ".auditignore", "README.md", "ac_cdd_config.py"]
-    install_cmd: str = "sudo apt-get update && sudo apt-get install -y git && pip install -U uv pytest python-dotenv aider-chat && pip install -e ."
+    install_cmd: str = "sudo apt-get update && sudo apt-get install -y git && pip install --no-cache-dir -U uv pytest python-dotenv aider-chat && pip install --no-cache-dir -e ."
     test_cmd: list[str] = ["uv", "run", "pytest"]
     lint_check_cmd: list[str] = ["uv", "run", "ruff", "check", "--fix", "."]
     type_check_cmd: list[str] = ["uv", "run", "mypy", "src/"]
