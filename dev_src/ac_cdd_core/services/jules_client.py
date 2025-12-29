@@ -350,6 +350,8 @@ class JulesClient:
                     else:
                         data = resp.json()
                         state = data.get("state")
+                        # logger.info(f"DEBUG: Session State: {state}")
+
 
                         # --- 1. INTERACTIVE HANDLING CHECK ---
                         # Check for inquiries first. Even if state is COMPLETED/SUCCEEDED, 
@@ -440,6 +442,8 @@ class JulesClient:
                              # Just log new activity count for now to avoid duplicate prints with above logic
                              self.console.print(f"[dim]Activity Count: {len(activities)}[/dim]")
                              last_activity_count = len(activities)
+                             logger.info(f"DEBUG: New Activities Detected: {len(activities)}")
+
 
                     # --- 3. Non-blocking User Input Check (Linux/Mac) ---
                     # This allows the user to type concurrently with polling loop
@@ -489,6 +493,7 @@ class JulesClient:
                 resp = await client.post(url, json=payload, headers=self._get_headers())
                 if resp.status_code == 200:
                     self.console.print("[dim]Message sent.[/dim]")
+                    logger.info(f"DEBUG: Message sent successfully to {url}")
                 else:
                     self.console.print(f"[bold red]Failed to send message: {resp.status_code}[/bold red]")
                     logger.error(f"SendMessage failed: {resp.text}")

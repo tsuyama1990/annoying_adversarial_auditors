@@ -269,6 +269,7 @@ class GraphBuilder:
 
             try:
                 # Continue Jules Session
+                logger.info(f"Sending Audit Feedback to Jules ({len(instruction)} chars): {instruction[:200]}...")
                 result = await self.jules_client.continue_session(
                     session_name=state["jules_session_name"],
                     prompt=instruction
@@ -505,8 +506,12 @@ class GraphBuilder:
         output = await self.llm_reviewer.review_code(
             files=files_content, 
             instruction=instruction, 
+            files=files_content, 
+            instruction=instruction, 
             model=model_to_use
         )
+        logger.info(f"LLM Response received (Length: {len(output)})")
+
 
         logger.info(f"Audit Round {iteration_count} Complete.")
 
