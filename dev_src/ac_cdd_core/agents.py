@@ -6,6 +6,7 @@ from ac_cdd_core.config import settings
 from ac_cdd_core.domain_models import (
     UatAnalysis,
 )
+from ac_cdd_core.utils import logger
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 
@@ -54,7 +55,11 @@ def get_model(model_name: str) -> Any:
         # Get API key from settings
         api_key = settings.OPENROUTER_API_KEY
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set but OpenRouter model is requested.")
+            # Check if we are in a likely test environment or just missing the key
+            # We will warn and return a dummy key to prevent import-time crashes in tests/CI
+            # where the key might not be set but we mock the calls anyway.
+            logger.warning("OPENROUTER_API_KEY is not set. Using dummy key 'sk-dummy'. This will fail if real API calls are attempted.")
+            api_key = "sk-dummy"
 
         # OpenAIChatModel requires env var for OpenRouter if using provider="openrouter"
         os.environ["OPENROUTER_API_KEY"] = api_key

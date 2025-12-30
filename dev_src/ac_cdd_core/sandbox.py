@@ -101,7 +101,7 @@ class SandboxRunner:
             except Exception as e:
                 # タイムアウトやSandbox消失のエラーか判定
                 err_msg = str(e).lower()
-                is_sandbox_error = "sandbox was not found" in err_msg or "timeout" in err_msg
+                is_sandbox_error = "sandbox was not found" in err_msg or "timeout" in err_msg or "sandbox error" in err_msg
 
                 if is_sandbox_error and attempt < max_retries:
                     logger.warning(
@@ -139,20 +139,16 @@ class SandboxRunner:
 
         return stdout, stderr, exit_code
 
-    async def _sync_to_sandbox(self, sandbox: Sandbox) -> None:
-        """
-        Uploads configured directories and files to the sandbox using a tarball for performance.
-        Skips if content hasn't changed.
-        """
+    def _compute_sync_hash(self) -> str:
+        """Computes hash of directories to sync."""
         root = Path.cwd()
-        current_hash = calculate_directory_hash(
+        return calculate_directory_hash(
             root, settings.sandbox.files_to_sync, settings.sandbox.dirs_to_sync
         )
 
-        if self._last_sync_hash == current_hash:
-            logger.info("Sandbox files up-to-date. Skipping sync.")
-            return
-
+    def _create_sync_tarball(self) -> io.BytesIO:
+        """Creates a tarball of files to sync."""
+        root = Path.cwd()
         tar_buffer = io.BytesIO()
 
         with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tar:
@@ -178,6 +174,31 @@ class SandboxRunner:
                         tar.add(file_path, arcname=str(rel_path))
 
         tar_buffer.seek(0)
+        return tar_buffer
+
+    async def _sync_to_sandbox(self, sandbox: Sandbox | None = None) -> None:
+        """
+        Uploads configured directories and files to the sandbox using a tarball for performance.
+        Skips if content hasn't changed.
+        """
+        if sandbox is None:
+            sandbox = self.sandbox
+            if sandbox is None:
+                # If we still don't have a sandbox, we can't sync.
+                # However, this method is usually called after _get_sandbox.
+                # Or it might be called in tests with mocked sandbox.
+                # If self.sandbox is also None, we should probably raise or return.
+                if settings.sandbox.template:  # Just a check to ensure settings loaded
+                    pass
+                return
+
+        current_hash = self._compute_sync_hash()
+
+        if self._last_sync_hash == current_hash:
+            logger.info("Sandbox files up-to-date. Skipping sync.")
+            return
+
+        tar_buffer = self._create_sync_tarball()
 
         # Upload the tarball
         remote_tar_path = f"{self.cwd}/bundle.tar.gz"
@@ -189,6 +210,10 @@ class SandboxRunner:
         )
         logger.info("Synced files to sandbox via tarball.")
         self._last_sync_hash = current_hash
+
+    async def cleanup(self) -> None:
+        """alias for close, matching test expectations"""
+        await self.close()
 
     async def close(self) -> None:
         if self.sandbox:

@@ -152,11 +152,12 @@ async def test_run_command_retry_on_failure():
         
         # Should retry and succeed
         assert code == 0
-        # Should create new sandbox after failure (via _get_sandbox logic which calls create if sandbox fails/is None)
+        # Should create new sandbox after failure
+        # (via _get_sandbox logic which calls create if sandbox fails/is None)
         # Note: logic inside run_command calls _get_sandbox again on retry.
         # But wait, run_command calls _get_sandbox at start of loop.
         # We need to ensure _get_sandbox creates new one on stored state change?
-        # Actually logic is: catch exception -> kill sandbox -> continue loop -> _get_sandbox calls create
+        # Actually logic is: catch exception -> kill sandbox -> continue loop
         assert mock_create.called
 
 
@@ -164,11 +165,11 @@ async def test_run_command_retry_on_failure():
 async def test_cleanup_sandbox():
     """Test sandbox cleanup."""
     runner = SandboxRunner()
-    runner.sandbox = MagicMock()
+    mock_sandbox = MagicMock()
+    runner.sandbox = mock_sandbox
     
     await runner.cleanup()
     
     # Should call kill on sandbox
-    runner.sandbox.kill.assert_called_once()
+    mock_sandbox.kill.assert_called_once()
     assert runner.sandbox is None
-

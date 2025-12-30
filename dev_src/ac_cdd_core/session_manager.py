@@ -3,6 +3,7 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 
 from ac_cdd_core.utils import logger
 
@@ -11,6 +12,11 @@ class SessionValidationError(Exception):
     """Raised when session validation fails."""
 
     pass
+
+class SessionInfo(TypedDict):
+    session_id: str
+    integration_branch: str
+    resume_info: dict | None
 
 
 class SessionManager:
@@ -51,7 +57,7 @@ class SessionManager:
             logger.info("Session file cleared")
 
     @classmethod
-    def validate_session(cls, session_id: str, integration_branch: str) -> tuple[bool, str]:
+    def validate_session(cls, session_id: str, integration_branch: str) -> tuple[bool, str | None]:
         """
         Validate that session state is consistent with Git state.
         
@@ -83,7 +89,7 @@ class SessionManager:
             logger.warning(error_msg)
             # Don't fail, just warn
         
-        return True, ""
+        return True, None
 
     @classmethod
     def reconcile_session(cls) -> dict | None:
@@ -146,104 +152,116 @@ class SessionManager:
         return f"{settings.session.integration_branch_prefix}/{session_id}"
     
     @classmethod
-    async def load_or_reconcile_session(
+    async def resume_jules_session(cls, session_name: str) -> dict:
+        """
+        Resumes a Jules session and waits for completion.
+        Returns resume_info dict if successful.
+        """
+        from ac_cdd_core.services.jules_client import JulesClient
+
+        # Normalize session name
+        name = (
+            session_name
+            if session_name.startswith("sessions/")
+            else f"sessions/{session_name}"
+        )
+
+        logger.info(f"Resuming Jules session: {name}")
+
+        jules = JulesClient()
+        try:
+            result = await jules.wait_for_completion(name)
+
+            if result.get("status") == "success" and result.get("pr_url"):
+                resume_info = {
+                    "pr_url": result["pr_url"],
+                    "jules_session_name": name,
+                }
+                logger.info(f"Successfully resumed Jules session with PR: {result['pr_url']}")
+                return resume_info
+            else:
+                raise SessionValidationError(
+                    "Cannot resume: Jules session not successful or no PR found."
+                )
+        except Exception as e:
+            if isinstance(e, SessionValidationError):
+                raise
+            raise SessionValidationError(f"Failed to resume Jules session: {e}") from e
+
+    @classmethod
+    def load_or_reconcile_session(
         cls, 
         session_id: str | None = None,
         auto_reconcile: bool = True,
-        resume_jules_session: str | None = None,
-    ) -> tuple[str, str, dict | None]:
+        resume_info: dict | None = None,
+    ) -> SessionInfo:
         """Load session from parameter, file, config, or Git reconciliation.
-        
-        Optionally resume from a Jules session.
         
         Args:
             session_id: Optional explicit session ID
             auto_reconcile: If True, attempt Git reconciliation if session not found
-            resume_jules_session: Optional Jules session ID to resume from
+            resume_info: Optional resume info from Jules session (passed from CLI)
             
         Returns:
-            (session_id, integration_branch, resume_info)
-            resume_info = {"pr_url": str, "jules_session_name": str} or None
+            Dict containing session_id, integration_branch, and optional resume_info
             
         Raises:
-            SessionValidationError: If no session can be found or resume fails
+            SessionValidationError: If no session can be found
         """
         from ac_cdd_core.config import settings
         
-        # Handle Jules resume first if provided
-        if resume_jules_session:
-            from ac_cdd_core.services.jules_client import JulesClient
-            
-            # Normalize session name
-            session_name = (
-                resume_jules_session
-                if resume_jules_session.startswith("sessions/")
-                else f"sessions/{resume_jules_session}"
-            )
-            
-            logger.info(f"Resuming Jules session: {session_name}")
-            
-            jules = JulesClient()
-            try:
-                result = await jules.wait_for_completion(session_name)
-                
-                if result.get("status") == "success" and result.get("pr_url"):
-                    # Extract session info from existing session or use provided
-                    if session_id:
-                        session_id_to_use = session_id
-                    else:
-                        # Try to load session for context
-                        saved_session = cls.load_session()
-                        if saved_session:
-                            session_id_to_use = saved_session["session_id"]
-                        elif settings.session.session_id:
-                            session_id_to_use = settings.session.session_id
-                        else:
-                            raise SessionValidationError(
-                                "Cannot resume: No session context found. "
-                                "Provide --session parameter."
-                            )
-                    
-                    integration_branch = cls.get_integration_branch(session_id_to_use)
-                    
-                    resume_info = {
-                        "pr_url": result["pr_url"],
-                        "jules_session_name": session_name,
-                    }
-                    
-                    logger.info(f"Successfully resumed Jules session with PR: {result['pr_url']}")
-                    return session_id_to_use, integration_branch, resume_info
-                else:
-                    raise SessionValidationError(
-                        "Cannot resume: Jules session not successful or no PR found."
-                    )
-            except Exception as e:
-                if isinstance(e, SessionValidationError):
-                    raise
-                raise SessionValidationError(f"Failed to resume Jules session: {e}") from e
-        
-        # Normal session loading (no resume)
+        # If resuming, we might infer session ID from saved context if not provided
+        if resume_info and not session_id:
+             saved_session = cls.load_session()
+             if saved_session:
+                 session_id = saved_session["session_id"]
+             elif settings.session.session_id:
+                 session_id = settings.session.session_id
+             else:
+                 # If we are resuming but can't find local context, we might fail
+                 # or create a new one? Assuming fail based on previous logic.
+                 raise SessionValidationError(
+                     "Cannot resume: No session context found. "
+                     "Provide --session parameter."
+                 )
+
         # 1. Use explicit session ID if provided
         if session_id:
             integration_branch = cls.get_integration_branch(session_id)
-            return session_id, integration_branch, None
+            return {
+                "session_id": session_id,
+                "integration_branch": integration_branch,
+                "resume_info": resume_info
+            }
         
         # 2. Try loading from session file
         saved_session = cls.load_session()
         if saved_session:
-            return saved_session["session_id"], saved_session["integration_branch"], None
+            return {
+                "session_id": saved_session["session_id"],
+                "integration_branch": saved_session["integration_branch"],
+                "resume_info": resume_info
+            }
         
         # 3. Try config
         if settings.session.session_id:
             session_id_from_config = settings.session.session_id
             integration_branch = cls.get_integration_branch(session_id_from_config)
-            return session_id_from_config, integration_branch, None
+            return {
+                "session_id": session_id_from_config,
+                "integration_branch": integration_branch,
+                "resume_info": resume_info
+            }
         
         # 4. Try Git reconciliation
         if auto_reconcile:
             reconciled = cls.reconcile_session()
             if reconciled:
-                return reconciled["session_id"], reconciled["integration_branch"], None
+                return {
+                    "session_id": reconciled["session_id"],
+                    "integration_branch": reconciled["integration_branch"],
+                    "resume_info": resume_info
+                }
         
         # No session found
         raise SessionValidationError(
@@ -254,4 +272,3 @@ class SessionManager:
             "2. If you have an existing session, specify it:\n"
             "   uv run manage.py run-cycle --session <session-id>"
         )
-

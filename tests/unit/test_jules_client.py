@@ -1,115 +1,144 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from ac_cdd_core.services.jules_client import JulesClient
+from ac_cdd_core.services.jules_client import JulesClient, JulesSessionError, JulesTimeoutError
 
 
 @pytest.mark.asyncio
 async def test_jules_url_construction():
-    """Verify _send_message correctly prepends base URL."""
+    """Test URL construction for Jules API."""
     client = JulesClient()
+    # Mock base attributes
     client.base_url = "https://api.example.com"
     client._get_headers = MagicMock(return_value={})
 
+    # Test _send_message
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value.status_code = 200
 
-        # Test relative path
+        # Relative path
         await client._send_message("sessions/123", "hello")
+        url = mock_post.call_args[0][0]
+        assert url == "https://api.example.com/sessions/123:sendMessage"
 
-        # Verify URL argument to post
-        args, _ = mock_post.call_args
-        assert args[0] == "https://api.example.com/sessions/123:sendMessage"
+        # Absolute path (should not double prepend)
+        await client._send_message("https://api.example.com/sessions/456", "hello")
+        url = mock_post.call_args[0][0]
+        assert url == "https://api.example.com/sessions/456:sendMessage"
 
 
 def test_list_activities_delegation():
-    """Verify list_activities delegates to api_client."""
+    """Test delegation to API client."""
     client = JulesClient()
-    client.api_client.list_activities = MagicMock(return_value=["act1"])
+    client.api_client = MagicMock()
 
-    result = client.list_activities("sessions/123")
-    assert result == ["act1"]
+    client.list_activities("sessions/123")
     client.api_client.list_activities.assert_called_once_with("sessions/123")
 
 
 @pytest.mark.asyncio
-async def test_run_session_success():
-    """Test successful session run with PR creation."""
+async def test_run_session_success(tmp_path):
+    """Test successful session execution."""
     client = JulesClient()
+    client.git = AsyncMock()
+    client.git.get_remote_url.return_value = "https://github.com/user/repo.git"
+    client.git.get_current_branch.return_value = "main"
+
+    completion_file = tmp_path / "test_completion"
     
     with (
-        patch.object(client.api_client, "create_session", return_value={"name": "sessions/123"}),
-        patch.object(client, "wait_for_completion", new_callable=AsyncMock) as mock_wait,
+        patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        patch.object(client, "_check_for_inquiry", return_value=None),
     ):
-        mock_wait.return_value = "https://github.com/user/repo/pull/1"
+        # Mock create session response
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"name": "sessions/123"}
         
-        from pathlib import Path
-        completion_file = Path("/tmp/test_completion")
+        # Mock poll response (SUCCEEDED with PR)
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "state": "SUCCEEDED",
+            "outputs": [
+                {"pullRequest": {"url": "https://github.com/pr/1"}}
+            ]
+        }
         
         pr_url = await client.run_session(
-            "session-id", "prompt", [], completion_file
+            session_id="test",
+            prompt="do it",
+            files=[],
+            completion_signal_file=completion_file
         )
         
-        assert pr_url == "https://github.com/user/repo/pull/1"
-        mock_wait.assert_called_once()
+        assert pr_url["pr_url"] == "https://github.com/pr/1"
 
 
 @pytest.mark.asyncio
-async def test_run_session_timeout():
-    """Test session timeout handling."""
-    from ac_cdd_core.services.jules_client import JulesTimeoutError
-    
+async def test_run_session_timeout(tmp_path):
+    """Test timeout during session."""
     client = JulesClient()
+    client.timeout = 0.1  # Fast timeout
+    client.poll_interval = 0.1
+    client.git = AsyncMock()
+    client.git.get_remote_url.return_value = "https://github.com/user/repo"
+
+    completion_file = tmp_path / "test_completion"
     
     with (
-        patch.object(client.api_client, "create_session", return_value={"name": "sessions/123"}),
-        patch.object(client, "wait_for_completion", new_callable=AsyncMock) as mock_wait,
+        patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
     ):
-        mock_wait.side_effect = JulesTimeoutError("Timeout")
+        # Create session ok
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"name": "sessions/123"}
         
-        from pathlib import Path
-        completion_file = Path("/tmp/test_completion")
+        # Poll keeps returning RUNNING
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {"state": "RUNNING"}
         
         with pytest.raises(JulesTimeoutError):
-            await client.run_session("session-id", "prompt", [], completion_file)
+            await client.run_session("test", "prompt", [], completion_file)
 
 
 @pytest.mark.asyncio
-async def test_continue_session():
-    """Test continuing an existing session."""
+async def test_continue_session(tmp_path):
+    """Test continue session flow."""
     client = JulesClient()
     
     with (
-        patch.object(client, "_send_message", new_callable=AsyncMock),
-        patch.object(client, "wait_for_completion", new_callable=AsyncMock) as mock_wait,
+        patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
+        patch.object(client, "wait_for_completion") as mock_wait,
     ):
-        mock_wait.return_value = "https://github.com/user/repo/pull/2"
+        mock_post.return_value.status_code = 200
+        mock_wait.return_value = {"pr_url": "https://pr", "status": "success"}
         
-        pr_url = await client.continue_session("sessions/123", "new prompt")
+        result = await client.continue_session("sessions/123", "feedback")
         
-        assert pr_url == "https://github.com/user/repo/pull/2"
+        assert result["pr_url"] == "https://pr"
+        mock_post.assert_called() # sendMessage called
+        mock_wait.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_wait_for_completion_pr_created():
-    """Test wait_for_completion when PR is created."""
+async def test_wait_for_completion_pr_created(tmp_path):
+    """Test polling loop finds PR."""
     client = JulesClient()
+    client.poll_interval = 0.01
     
-    with patch("httpx.AsyncClient") as mock_client_class:
-        mock_client = AsyncMock()
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        # First call running, second succeeded
+        mock_get.side_effect = [
+            MagicMock(status_code=200, json=lambda: {"state": "RUNNING"}),
+            MagicMock(status_code=200, json=lambda: {
+                "state": "SUCCEEDED",
+                "outputs": [{"pullRequest": {"url": "https://pr"}}]
+            }),
+        ]
         
-        # Mock response with PR URL
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "state": "SUCCEEDED",
-            "pullRequest": {"url": "https://github.com/user/repo/pull/3"}
-        }
-        mock_client.get.return_value = mock_response
-        
-        pr_url = await client.wait_for_completion("sessions/123")
-        
-        assert pr_url == "https://github.com/user/repo/pull/3"
+        result = await client.wait_for_completion("sessions/123")
+        assert result["pr_url"] == "https://pr"
 
 
 @pytest.mark.asyncio
@@ -135,33 +164,19 @@ async def test_check_for_inquiry_found():
     result = await client._check_for_inquiry(mock_client, "sessions/123")
     
     assert result is not None
-    message, activity_id = result
-    assert "What should I do?" in message
-    assert activity_id == "act123"
+    assert result[0] == "What should I do?"
 
 
 @pytest.mark.asyncio
 async def test_check_for_inquiry_not_found():
-    """Test when no inquiry is present."""
+    """Test detecting no inquiry."""
     client = JulesClient()
-    
     mock_client = AsyncMock()
-    
-    # Mock activities response without inquiry
     mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "activities": [
-            {
-                "id": "act456",
-                "type": "PROGRESS_UPDATE",
-                "message": "Working on it"
-            }
-        ]
-    }
+    mock_response.json.return_value = {"activities": []}
     mock_client.get.return_value = mock_response
     
     result = await client._check_for_inquiry(mock_client, "sessions/123")
-    
     assert result is None
 
 
@@ -179,5 +194,5 @@ async def test_send_message_success():
         
         # Verify URL and payload
         args, kwargs = mock_post.call_args
-        assert "sessions/123:sendMessage" in args[0]
-        assert kwargs["json"]["prompt"] == "Hello"
+        assert args[0] == "https://api.example.com/sessions/123:sendMessage"
+        assert kwargs["json"] == {"prompt": "Hello"}

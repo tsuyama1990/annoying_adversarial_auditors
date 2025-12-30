@@ -107,7 +107,7 @@ class GitManager:
             except Exception:
                 pass  # Best effort
             
-            from ac_cdd_core.error_messages import RecoveryMessages
+            from ac_cdd_core.messages import RecoveryMessages
             error_msg = RecoveryMessages.merge_conflict(source, target, original_branch)
             raise RuntimeError(error_msg) from e
 
