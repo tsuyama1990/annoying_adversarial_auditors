@@ -146,7 +146,15 @@ class GraphBuilder:
         # Get Shared Sandbox (Persistent)
         runner = await self._get_shared_sandbox()
 
-        template_path = Path(settings.paths.templates) / "ARCHITECT_INSTRUCTION.md"
+        # Prioritize custom instruction in dev_documents
+        custom_instruction_path = Path(settings.paths.documents_dir) / "ARCHITECT_INSTRUCTION.md"
+        if custom_instruction_path.exists():
+            instruction_path = custom_instruction_path
+            logger.info(f"Using custom Architect instruction from: {instruction_path}")
+        else:
+            instruction_path = Path(settings.paths.templates) / "ARCHITECT_INSTRUCTION.md"
+            logger.info(f"Using default Architect instruction from: {instruction_path}")
+
         spec_path = Path(settings.paths.documents_dir) / "ALL_SPEC.md"
         signal_file = Path(settings.paths.documents_dir) / "plan_status.json"
 
@@ -165,7 +173,7 @@ class GraphBuilder:
         files = [_to_rel(spec_path)]
 
         # System Instruction: ARCHITECT_INSTRUCTION.md
-        instruction = template_path.read_text(encoding="utf-8")
+        instruction = instruction_path.read_text(encoding="utf-8")
 
         try:
             # Pass runner for remote execution
