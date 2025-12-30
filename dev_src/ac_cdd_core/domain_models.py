@@ -118,3 +118,12 @@ class SystemArchitecture(BaseModel):
     )
     tech_stack: list[str] = Field(..., description="List of technologies and libraries to be used")
     implementation_roadmap: list[str] = Field(..., description="Step-by-step implementation phases")
+
+
+class PlanAuditResult(BaseModel):
+    """Result of AI-on-AI Plan Audit"""
+
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["APPROVED", "REJECTED"]
+    reason: str
+    feedback: str | None = Field(default="", description="Mandatory if REJECTED")

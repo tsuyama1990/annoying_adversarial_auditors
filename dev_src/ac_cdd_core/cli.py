@@ -437,3 +437,75 @@ def finalize_session(
             sys.exit(1)
 
     asyncio.run(_run())
+
+
+@app.command(name="start-session")
+def start_session(
+    prompt: Annotated[
+        str, typer.Option("--prompt", help="Initial prompt for the session")
+    ] = "Start new implementation plan",
+    audit_mode: Annotated[
+        bool, typer.Option("--audit-mode", help="Enable AI-on-AI Plan Audit")
+    ] = False,
+    max_retries: Annotated[int, typer.Option("--retries", help="Max audit retries")] = 3,
+) -> None:
+    """
+    Start a generic Jules session. Use --audit-mode to enable interactive plan auditing.
+    """
+    import asyncio
+    from pathlib import Path
+
+    async def _run() -> None:
+        console.rule("[bold magenta]Starting Jules Session[/bold magenta]")
+
+        # Gather specs for context
+        docs_dir = Path(settings.paths.documents_dir)
+        # Using full paths as keys to ensure JulesClient can locate them for upload
+        spec_files = {}
+        for filename in ["ALL_SPEC.md", "SPEC.md", "UAT.md", "ARCHITECT_INSTRUCTION.md"]:
+            p = docs_dir / filename
+            if p.exists():
+                # Store full path string as key, content as value
+                # (AuditOrchestrator splits keys for Jules file list)
+                spec_files[str(p)] = p.read_text(encoding="utf-8")
+
+        if audit_mode:
+            from ac_cdd_core.services.audit_orchestrator import AuditOrchestrator
+
+            orch = AuditOrchestrator()
+            try:
+                result = await orch.run_interactive_session(
+                    prompt=prompt,
+                    source_name="github",  # Simplified source
+                    spec_files=spec_files,
+                    max_retries=max_retries,
+                )
+                if result and result.get("pr_url"):
+                    console.print(
+                        Panel(
+                            f"Audit & Implementation Complete.\nPR: {result['pr_url']}",
+                            style="bold green",
+                        )
+                    )
+            except Exception as e:
+                console.print(f"[bold red]Session Failed:[/bold red] {e}")
+                sys.exit(1)
+        else:
+            # Fallback to standard JulesClient run
+            # (if needed, though this mimics current run-cycle but generic)
+            from ac_cdd_core.services.jules_client import JulesClient
+
+            client = JulesClient()
+            try:
+                # We assume current branch is what we want
+                await client.run_session(
+                    session_id=settings.current_session_id,
+                    prompt=prompt,
+                    files=[str(f) for f in docs_dir.glob("*.md")],  # Pass all docs
+                    completion_signal_file=Path("completion_signal"),
+                )
+            except Exception as e:
+                console.print(f"[red]Session Error:[/red] {e}")
+                sys.exit(1)
+
+    asyncio.run(_run())

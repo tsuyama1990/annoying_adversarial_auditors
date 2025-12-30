@@ -114,20 +114,22 @@ class JulesApiClient:
                 return src["name"]
         return None
 
-    def create_session(self, source: str, prompt: str) -> dict[str, Any]:
+    def create_session(
+        self, source: str, prompt: str, require_plan_approval: bool = False
+    ) -> dict[str, Any]:
         payload = {
             "prompt": prompt,
             "sourceContext": {"source": source, "githubRepoContext": {"startingBranch": "main"}},
+            "requirePlanApproval": require_plan_approval,
         }
         return self._request("POST", "sessions", payload)
 
-    def approve_plan(self, session_id: str) -> dict[str, Any]:
-        """Approves the current plan in the session, triggering PR creation."""
+    def approve_plan(self, session_id: str, plan_id: str) -> dict[str, Any]:
+        """Approves the current plan in the session, triggering implementation."""
         # Note: The endpoint uses a colon verb syntax
         endpoint = f"{session_id}:approvePlan"
-        # Endpoint takes an empty body or specific approval options if needed
-        # Documentation implies simple POST is enough for default approval
-        return self._request("POST", endpoint, {})
+        payload = {"planId": plan_id}
+        return self._request("POST", endpoint, payload)
 
     def list_activities(self, session_id_path: str) -> list[dict[str, Any]]:
         try:
@@ -222,7 +224,8 @@ class JulesClient:
         files: list[str],
         completion_signal_file: Path,
         runner: Any = None,
-        target_branch: str = "main",  # NEW: Target branch for PR
+        target_branch: str = "main",
+        require_plan_approval: bool = False,  # NEW
     ) -> dict[str, Any]:
         """
         Orchestrates the Jules session:
@@ -301,6 +304,7 @@ class JulesClient:
                 },
             },
             "automationMode": "AUTO_CREATE_PR",
+            "requirePlanApproval": require_plan_approval,
         }
 
         async with httpx.AsyncClient() as client:
@@ -329,7 +333,11 @@ class JulesClient:
             except httpx.RequestError as e:
                 raise JulesSessionError(f"Network error creating session: {e}") from e
 
-        # 3. Poll for Completion and Interact
+        # 3. Return session name if audit mode, else wait for completion
+        if require_plan_approval:
+            return {"session_name": session_name, "status": "running"}
+
+        # 3b. Poll for Completion and Interact (Standard Mode)
         logger.info(f"Session created: {session_name}. Waiting for PR creation...")
         result = await self.wait_for_completion(session_name)
         result["session_name"] = session_name
@@ -599,11 +607,17 @@ class JulesClient:
 
                 await self._sleep(self.poll_interval)
 
-    async def _send_message(self, session_url: str, content: str):
+    async def send_message(self, session_url: str, content: str):
         """
         Sends a message to the active session.
         Endpoint: POST /{session_name}:sendMessage
         Payload: { "prompt": "..." }
+        """
+        return await self._send_message(session_url, content)
+
+    async def _send_message(self, session_url: str, content: str):
+        """
+        Internal implementation for sending messages.
         """
         # DETOUR check
         if self.api_client.api_key == "dummy_jules_key" and not self._is_httpx_mocked():
@@ -634,3 +648,56 @@ class JulesClient:
                     logger.error(f"SendMessage failed: {resp.text}")
             except Exception as e:
                 logger.error(f"SendMessage error: {e}")
+
+    async def get_latest_plan(self, session_id: str) -> dict[str, Any] | None:
+        """
+        Fetches the latest 'planGenerated' activity from the session.
+        Returns the plan details dict if found, else None.
+        """
+        if session_id.startswith("sessions/"):
+            session_id_path = session_id
+        else:
+            session_id_path = f"sessions/{session_id}"
+
+        activities = self.list_activities(session_id_path)
+        # Search in reverse (newest first)
+        for activity in activities:
+            if activity.get("type") == "planGenerated":
+                return activity.get("planGenerated")
+        return None
+
+    async def wait_for_activity_type(
+        self, session_id: str, target_type: str, timeout: int = 600, interval: int = 10
+    ) -> dict[str, Any] | None:
+        """
+        Polls for a specific activity type (e.g., 'planGenerated') to appear.
+        Returns the LATEST occurrence (reverse order search).
+        """
+        if session_id.startswith("sessions/"):
+            session_id_path = session_id
+        else:
+            session_id_path = f"sessions/{session_id}"
+
+        start_time = asyncio.get_event_loop().time()
+
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            activities = self.list_activities(session_id_path)
+            for activity in activities:
+                if activity.get("type") == target_type:
+                    return activity
+
+            await self._sleep(interval)
+
+        return None
+
+    async def approve_plan(self, session_id: str, plan_id: str) -> dict[str, Any]:
+        """Approves the specific plan."""
+        # Note: If self.api_client is sync, we wrap it?
+        # api_client.approve_plan is sync.
+        # But this function is async to match the rest of this class.
+        if session_id.startswith("sessions/"):
+            session_id_path = session_id
+        else:
+            session_id_path = f"sessions/{session_id}"
+
+        return self.api_client.approve_plan(session_id_path, plan_id)
