@@ -121,21 +121,10 @@ def test_gen_cycles_command(runner, mock_graph_builder, mock_session_manager):
         # Patch where the classes are defined, not in cli (lazy imports)
         patch("ac_cdd_core.graph.GraphBuilder", return_value=mock_graph_builder),
         patch("ac_cdd_core.session_manager.SessionManager", mock_session_manager),
+        patch("ac_cdd_core.cli.CycleState") as MockCycleState,
     ):
         # Mock graph execution
         mock_graph = MagicMock()
-        # Mock ainvoke to return a State object or Dict that matches expectation
-        # cli.py expects final_state.session_id.
-        # If CycleState is Pydantic, dict access via attribute works if it's an object.
-        # But if ainvoke returns a dict (standard LangGraph), then cli.py line 174 is wrong unless:
-        # 1. it wraps it, or 2. we mock it correctly.
-        # However, checking `dev_src/ac_cdd_core/cli.py` line 174:
-        # `session_id_final = final_state.session_id`.
-        # This implies final_state is an object.
-        # BUT `GraphBuilder.build_architect_graph` returns `CompiledStateGraph`.
-        # `ainvoke` returns `dict` usually.
-        # Let's assume cli.py expects an OBJECT.
-        # So we mock return_value as a MagicMock which has attributes.
         mock_state = MagicMock()
         mock_state.session_id = "test-session"
         mock_state.integration_branch = "dev/test"
@@ -144,10 +133,16 @@ def test_gen_cycles_command(runner, mock_graph_builder, mock_session_manager):
         mock_graph.ainvoke = AsyncMock(return_value=mock_state)
         mock_graph_builder.build_architect_graph.return_value = mock_graph
 
-        result = runner.invoke(app, ["gen-cycles"])
+        # Invoke with explicit cycles count
+        result = runner.invoke(app, ["gen-cycles", "--cycles", "3"])
 
         assert result.exit_code == 0
         assert "Architect Phase: Generating Cycles" in result.stdout
+        
+        # Verify CycleState was initialized with planned_cycle_count=3
+        MockCycleState.assert_called_once()
+        _, kwargs = MockCycleState.call_args
+        assert kwargs.get("planned_cycle_count") == 3
 
 
 def test_run_cycle_command(

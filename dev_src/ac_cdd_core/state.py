@@ -56,7 +56,11 @@ class CycleState(BaseModel):
     # Session tracking
     session_id: str | None = None
     integration_branch: str | None = None
+    integration_branch: str | None = None
     is_session_finalized: bool = False
+    
+    # Architect Config
+    planned_cycle_count: int | None = 5
 
     # Validators
     @field_validator("current_auditor_index")

@@ -165,7 +165,11 @@ def gen_cycles(
         graph = builder.build_architect_graph()
 
         # Initialize state with session
-        initial_state = CycleState(cycle_id=settings.DUMMY_CYCLE_ID, session_id=session_id)
+        initial_state = CycleState(
+            cycle_id=settings.DUMMY_CYCLE_ID, 
+            session_id=session_id,
+            planned_cycle_count=cycles
+        )
 
         # Run the graph
         try:

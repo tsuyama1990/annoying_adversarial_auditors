@@ -42,7 +42,7 @@ If you have any good suggestions for the  `ALL_SPEC.md` file, you must suggest t
 4. **Design Architecture** (Min 500 words)
    - File structure (ascii tree), class/function definitions overview, data models.
 5. **Implementation Plan** (Min 500 words per cycle)
-   - Decompose the project into logical, self-contained units and assign them to sequential cycles (CYCLE01, CYCLE02, ...).
+   - Decompose the project into valid sequential cycles (CYCLE01 .. CYCLE{{max_cycles}}).
    - Detail exactly what features belong to each cycle.
 6. **Test Strategy** (Min 500 words per cycle)
    - How each cycle will be tested.
