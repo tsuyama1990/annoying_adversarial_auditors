@@ -11,7 +11,7 @@ from .config import settings
 # from .graph import build_architect_graph, build_coder_graph
 from .service_container import ServiceContainer
 from .state import CycleState
-from .utils import logger
+from .utils import KeepAwake, logger
 
 app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Contract-Driven Development Environment")
 console = Console()
@@ -273,7 +273,9 @@ def run_cycle(
 
             # Validate session using validator class
             try:
-                validator = SessionValidator(session_id_to_use, integration_branch, check_remote=True)
+                validator = SessionValidator(
+                session_id_to_use, integration_branch, check_remote=True
+            )
                 is_valid, error_msg = await validator.validate()
                 if not is_valid:
                     console.print(f"[red]{error_msg}[/red]")
