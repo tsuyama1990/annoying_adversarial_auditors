@@ -386,7 +386,7 @@ class GraphBuilder:
                         "current_phase": "coder_complete",
                         "iteration_count": iteration_count,
                         # maintain session info
-                        "jules_session_name": state["jules_session_name"],
+                        "jules_session_name": state.jules_session_name,
                         "pr_url": pr_url,
                         # advance committee state
                         "current_auditor_index": next_auditor_idx,
