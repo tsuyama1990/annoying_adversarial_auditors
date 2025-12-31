@@ -386,7 +386,7 @@ class GraphBuilder:
                         "current_phase": "coder_complete",
                         "iteration_count": iteration_count,
                         # maintain session info
-                        "jules_session_name": state["jules_session_name"],
+                        "jules_session_name": state.jules_session_name,
                         "pr_url": pr_url,
                         # advance committee state
                         "current_auditor_index": next_auditor_idx,
@@ -627,11 +627,24 @@ class GraphBuilder:
                 logger.warning(f"Failed to read {f_path}: {e}")
 
         # 3. Load Instruction
-        template_path = Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md"
-        if template_path.exists():
-            instruction = template_path.read_text(encoding="utf-8")
+        # Prioritize custom instruction in dev_documents
+        custom_instruction_path = (
+            Path(settings.paths.documents_dir) / "templates" / "AUDITOR_INSTRUCTION.md"
+        )
+        # Support both locations (root of docs or templates subdir of docs)
+        if not custom_instruction_path.exists():
+             custom_instruction_path = Path(settings.paths.documents_dir) / "AUDITOR_INSTRUCTION.md"
+
+        if custom_instruction_path.exists():
+            instruction = custom_instruction_path.read_text(encoding="utf-8")
+            logger.info(f"Using custom Auditor instruction from: {custom_instruction_path}")
         else:
-            instruction = "Review the code strictly."
+            template_path = Path(settings.paths.templates) / "AUDITOR_INSTRUCTION.md"
+            if template_path.exists():
+                logger.info(f"Using default Auditor instruction from: {template_path}")
+                instruction = template_path.read_text(encoding="utf-8")
+            else:
+                instruction = "Review the code strictly."
 
         instruction += (
             f"\n\n(Auditor #{auditor_idx}, Review {review_count}/{settings.REVIEWS_PER_AUDITOR}, "
