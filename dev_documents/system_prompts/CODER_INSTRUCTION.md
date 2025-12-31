@@ -9,9 +9,9 @@ Your goal is to implement and **VERIFY** the features for **CYCLE {{cycle_id}}**
 3.  **MANDATORY LOGGING**: You MUST submit the raw output of your test execution to verify your work.
 
 ## Inputs
-- `dev_documents/SYSTEM_ARCHITECTURE.md`
-- `dev_documents/CYCLE{{cycle_id}}/SPEC.md`
-- `dev_documents/CYCLE{{cycle_id}}/UAT.md`
+- `dev_documents/system_prompts/SYSTEM_ARCHITECTURE.md`
+- `dev_documents/system_prompts/CYCLE{{cycle_id}}/SPEC.md`
+- `dev_documents/system_prompts/CYCLE{{cycle_id}}/UAT.md`
 
 ## Constraints & Environment
 - **EXISTING PROJECT**: You are working within an EXISTING project.

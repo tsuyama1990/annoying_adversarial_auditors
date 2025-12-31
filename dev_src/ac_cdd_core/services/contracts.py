@@ -14,7 +14,7 @@ class ContractManager:
         Syncs schema.py from the cycle document directory to the contracts directory.
         """
         contracts_dir = Path(settings.paths.contracts_dir)
-        cycle_dir = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
+        cycle_dir = Path(settings.paths.templates) / f"CYCLE{cycle_id}"
         source_schema = cycle_dir / "schema.py"
         target_schema = contracts_dir / f"schema_cycle{cycle_id}.py"
 

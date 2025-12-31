@@ -11,10 +11,10 @@ Your role is to conduct a **STRICT STATIC CODE ANALYSIS** of the Pull Request ge
 4.  **TEXT ONLY**: Output ONLY the Audit Report. Do NOT attempt to fix the code.
 
 ## Inputs
-- `dev_documents/SYSTEM_ARCHITECTURE.md` (Architecture Standards)
-- `dev_documents/CYCLE{{cycle_id}}/SPEC.md` (Requirements)
-- `dev_documents/CYCLE{{cycle_id}}/UAT.md` (User Acceptance Scenarios)
-- `dev_documents/CYCLE{{cycle_id}}/test_execution_log.txt` (Proof of testing from Coder)
+- `dev_documents/system_prompts/SYSTEM_ARCHITECTURE.md` (Architecture Standards)
+- `dev_documents/system_prompts/CYCLE{{cycle_id}}/SPEC.md` (Requirements)
+- `dev_documents/system_prompts/CYCLE{{cycle_id}}/UAT.md` (User Acceptance Scenarios)
+- `dev_documents/system_prompts/CYCLE{{cycle_id}}/test_execution_log.txt` (Proof of testing from Coder)
 
 ## Audit Guidelines
 

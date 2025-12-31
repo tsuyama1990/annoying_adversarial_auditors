@@ -14,7 +14,7 @@ class ArtifactManager:
         """
         Saves the CyclePlan artifacts to the cycle directory.
         """
-        cycle_dir = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
+        cycle_dir = Path(settings.paths.templates) / f"CYCLE{cycle_id}"
         cycle_dir.mkdir(parents=True, exist_ok=True)
 
         # Save artifacts

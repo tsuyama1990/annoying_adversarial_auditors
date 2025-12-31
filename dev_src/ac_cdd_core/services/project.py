@@ -14,7 +14,7 @@ class ProjectManager:
         Creates a new cycle directory structure.
         Returns (success, message).
         """
-        base_path = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
+        base_path = Path(settings.paths.templates) / f"CYCLE{cycle_id}"
         if base_path.exists():
             return False, f"Cycle {cycle_id} already exists!"
 

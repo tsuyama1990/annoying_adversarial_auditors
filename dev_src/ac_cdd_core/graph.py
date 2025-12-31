@@ -278,10 +278,10 @@ class GraphBuilder:
         )
 
         template_path = Path(settings.paths.templates) / "CODER_INSTRUCTION.md"
-        cycle_dir = Path(settings.paths.documents_dir) / f"CYCLE{cycle_id}"
+        cycle_dir = Path(settings.paths.templates) / f"CYCLE{cycle_id}"
         spec_file = cycle_dir / "SPEC.md"
         uat_file = cycle_dir / "UAT.md"
-        arch_file = Path(settings.paths.documents_dir) / "SYSTEM_ARCHITECTURE.md"
+        arch_file = Path(settings.paths.templates) / "SYSTEM_ARCHITECTURE.md"
 
         cwd = Path.cwd()
 
@@ -590,8 +590,8 @@ class GraphBuilder:
         # Add Documentation (Spec, UAT, Arch) to ensure Auditor understands the objective
         cycle_id = state.cycle_id
         docs_dir = Path(settings.paths.documents_dir)
-        cycle_dir = docs_dir / f"CYCLE{cycle_id}"
-
+        cycle_dir = Path(settings.paths.templates) / f"CYCLE{cycle_id}"
+        docs_dir = Path(settings.paths.templates)
         docs = [docs_dir / "SYSTEM_ARCHITECTURE.md", cycle_dir / "SPEC.md", cycle_dir / "UAT.md"]
 
         for d in docs:
