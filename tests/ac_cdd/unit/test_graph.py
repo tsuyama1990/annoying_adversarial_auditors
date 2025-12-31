@@ -160,7 +160,7 @@ async def test_audit_node_execution(mock_services):
             state = CycleState(
                 cycle_id="01",
                 active_branch="feat/cycle01",
-                current_iteration=1,
+                iteration_count=1,
                 current_auditor_index=1,
                 current_auditor_review_count=1,
             )
@@ -199,7 +199,7 @@ async def test_fix_node_execution(mock_services):
                 cycle_id="01",
                 jules_session_name="sessions/123",
                 audit_feedback=["Fix line too long errors"],
-                current_iteration=2,
+                iteration_count=2,
                 active_branch="dev/cycle01",
                 current_auditor_index=1,
                 current_auditor_review_count=1,
