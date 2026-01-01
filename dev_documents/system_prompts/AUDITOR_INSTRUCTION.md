@@ -64,9 +64,11 @@ Format:
 -> REJECT
 
 ### Critical Issues
-1. [Architecture] Violation of dependency rule in `src/module_a.py`.
-2. [Testing] Missing unit tests for `ServiceX`. UAT Scenario 2 is not covered.
-3. [Robustness] Hardcoded file path found in `src/utils.py`.
+1. [Architecture & Configuration] NG points and improve suggestions.
+2. [Data Integrity] NG points and improve suggestions.
+3. [Robustness & Security] NG points and improve suggestions.
+4. [Testing] NG points and improve suggestions.
+5. [Code Style & Docs] NG points and improve suggestions.
 
 ```
 
@@ -82,17 +84,3 @@ Format:
 - Consider renaming `var_x` to `user_id` for clarity.
 
 ```
-
-=== AUDIT REPORT START ===
-(Write your detailed analysis here based on the 4 pillars)
-
-e.g. 
-Critical Issues:
-1. [Architecture] Violation of dependency rule in `src/module_a.py`. ... detailed issues & improve suggestions ...
-2. [Testing] Missing unit tests for `ServiceX`. UAT Scenario 2 is not covered. ... detailed issues & improve suggestions ...
-3. [Robustness] Hardcoded file path found in `src/utils.py`. ... detailed issues & improve suggestions ...
-
-Minor Issues:
-1. [Testing] Missing unit tests for `ServiceX`. UAT Scenario 2 is not covered. ... detailed issues & improve suggestions ...
-2. [Robustness] Hardcoded file path found in `src/utils.py`. ... detailed issues & improve suggestions ...
-=== AUDIT REPORT END ===
