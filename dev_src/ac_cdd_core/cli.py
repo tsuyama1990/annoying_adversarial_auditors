@@ -379,8 +379,49 @@ def run_cycle(
                 await builder.cleanup()
 
     async def _run_all() -> None:
-        # Default full list
-        raw_list = ["01", "02", "03", "04", "05"]
+        # Dynamic Cycle Discovery
+        import json
+        from pathlib import Path
+
+        raw_list = []
+        
+        # 1. Try plan_status.json (Primary Source)
+        # Check both templates dir (where we saw it) and docs dir (where it might be intended)
+        possible_paths = [
+            Path(settings.paths.templates) / "plan_status.json",
+            Path(settings.paths.documents_dir) / "plan_status.json",
+        ]
+        
+        for p in possible_paths:
+            if p.exists():
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    found_cycles = data.get("cycles", [])
+                    if found_cycles:
+                        raw_list = found_cycles
+                        # console.print(f"[dim]Loaded cycle plan from {p.name}: {raw_list}[/dim]")
+                        break
+                except Exception:
+                    pass
+        
+        # 2. Fallback: Scan Directory for CYCLExx
+        if not raw_list:
+            templates_dir = Path(settings.paths.templates)
+            if templates_dir.exists():
+                valid_cycles = []
+                for d in templates_dir.iterdir():
+                    if d.is_dir() and d.name.startswith("CYCLE"):
+                        suffix = d.name.replace("CYCLE", "")
+                        if suffix.isdigit():
+                            valid_cycles.append(suffix)
+                if valid_cycles:
+                    raw_list = sorted(valid_cycles)
+                    # console.print(f"[dim]Discovered cycles from directories: {raw_list}[/dim]")
+
+        # 3. Last Resort Fallback
+        if not raw_list:
+             raw_list = ["01", "02", "03", "04", "05"]
+
         cycles_to_run = raw_list if cycle_id.lower() == "all" else [cycle_id]
 
         # SMART RESUME for 'all' mode
