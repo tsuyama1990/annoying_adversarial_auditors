@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     filename_arch: str = "SYSTEM_ARCHITECTURE.md"
     max_audit_retries: int = 2
 
+    # [Docker Path Configuration]
+    # ユーザーのワークスペース (コンテナ内のマウントポイント)
+    workspace_root: Path = Path("/app")
+
+    # ユーザー仕様書ディレクトリ (Context)
+    docs_dir: Path = Path("/app/dev_documents")
+
+    # ユーザーソースコード (Target)
+    src_dir: Path = Path("/app/src")
+    tests_dir: Path = Path("/app/tests")
+
     # Path resolution
     internal_template_path: Path = Field(
         default=Path("/opt/ac-cdd/templates"), description="Path to system prompts inside container"
@@ -55,6 +66,35 @@ class Settings(BaseSettings):
             return local_dev_path
 
         return path  # Return the default path even if it doesn't exist, to let caller handle error
+
+    def get_context_files(self) -> list[str]:
+        """Auditor/Coderにとっての参照専用ファイル(仕様書)のパスリスト"""
+        # Check if running locally (fallback) or in Docker
+        if not self.docs_dir.exists():
+            # Fallback for local testing if /app doesn't exist
+            # Use current working directory relative path
+            local_docs = Path.cwd() / "dev_documents"
+            if local_docs.exists():
+                return [str(p) for p in local_docs.glob("*.md")]
+            return []
+
+        return [str(p) for p in self.docs_dir.glob("*.md")]
+
+    def get_target_files(self) -> list[str]:
+        """Auditor/Coderにとっての編集対象ファイル(コード)のパスリスト"""
+        targets = []
+
+        # Determine roots (fallback for local dev)
+        src = self.src_dir if self.src_dir.exists() else Path.cwd() / "src"
+        tests = self.tests_dir if self.tests_dir.exists() else Path.cwd() / "tests"
+
+        if src.exists():
+            targets.extend([str(p) for p in src.rglob("*.py")])
+
+        if tests.exists():
+            targets.extend([str(p) for p in tests.rglob("*.py")])
+
+        return targets
 
 
 def load_settings(config_path: str | None = None) -> Settings:
