@@ -1,6 +1,4 @@
 # Autonomous Development Environment (AC-CDD)
-** README.md under root directory can be replaced by the one for actual development.
-The same contents can be found in dev_documents/README.md **
 
 An AI-Native Cycle-Based Contract-Driven Development Environment.
 
@@ -31,43 +29,52 @@ An AI-Native Cycle-Based Contract-Driven Development Environment.
         *   **LLMReviewer**: For fast, direct API-based code auditing using various LLM providers.
         *   **LangGraph**: For robust state management and supervisor loops.
 
-This repository is a template for creating AI-powered software development projects. It separates the agent orchestration logic from the user's product code.
+## Deployment Architecture
 
-## Directory Structure
+AC-CDD is designed as a **containerized CLI tool**. You do not clone the tool's source code into your project. Instead, you run the AC-CDD Docker container, which mounts your project directory.
 
-*   `dev_src/`: **Agent Core Code.** The source code for the AC-CDD CLI and agents (`ac_cdd_core`).
-*   `src/`: **User Product Code.** This is where YOUR project's source code resides. The agents will read and write code here.
-*   `dev_documents/`: **Documentation & Artifacts.** Stores design docs (`ALL_SPEC.md`, `SYSTEM_ARCHITECTURE.md`), cycle artifacts (`CYCLE{xx}/`), and templates.
-*   `tests/`: Tests for the AC-CDD core logic (you can add your own tests in `src/tests` or similar if you wish, but usually `tests/` here is for the tool itself if you are forking). *Note: The agents will generate tests for YOUR code in `tests/` or as configured.*
+**Directory Structure on User's Host:**
+
+```
+📂 my-awesome-app/ (Your Repository)
+ ├── 📂 src/              <- Your source code
+ ├── 📂 dev_documents/    <- Specifications (ALL_SPEC.md, etc.)
+ ├── .env                 <- API Keys
+ ├── ac_cdd_config.py     <- Project Configuration
+ └── docker-compose.yml   <- Runner configuration
+```
+
+**Inside the Docker Container:**
+
+```
+[🐳 ac-cdd-core]
+ ├── /app (WORKDIR)       <- Your project is mounted here
+ ├── /opt/ac-cdd/templates <- Internal system prompts & resources
+ └── Python Environment   <- uv, LangGraph, Agents pre-installed
+```
 
 ## Getting Started
 
 ### Prerequisites
 
-*   Python 3.12+
-*   `uv` (Universal Python Package Manager)
+*   Docker Desktop or Docker Engine
 *   `git`
-*   `gh` (GitHub CLI)
-*   *Note: All AI agents (Jules, LLMReviewer) operate remotely or via API. No local AI CLI tools required.*
+*   `gh` (GitHub CLI) - Required for authentication with GitHub
 
 ### Installation
 
-1.  **Clone the repository:**
+1.  **Pull the Docker Image (or build it):**
     ```bash
-    git clone https://github.com/your-org/autonomous-dev-env.git
-    cd autonomous-dev-env
+    docker build -t ac-cdd .
     ```
+    *(Assuming you have the Dockerfile locally, or pull from a registry if published)*
 
-2.  **Install dependencies:**
+2.  **Create an Alias (Recommended):**
+    Add this to your shell profile (`.zshrc` or `.bashrc`) for easy access:
     ```bash
-    uv sync
+    alias ac-cdd='docker run -it --rm -v $(pwd):/app -v $HOME/.config/gh:/root/.config/gh --env-file .env ac-cdd'
     ```
-
-3.  **Setup Environment:**
-    Run the initialization wizard to generate your `.env` file.
-    ```bash
-    uv run manage.py init
-    ```
+    *Note: We mount `~/.config/gh` to share GitHub credentials.*
 
 ### Configuration
 
@@ -75,13 +82,19 @@ The system is configured via `.env` and `ac_cdd_config.py`.
 
 #### API Keys
 
-You must provide the following keys in your `.env` file:
+Create a `.env` file in your project root:
 
-*   `JULES_API_KEY`: Required for the Jules autonomous agent (Architect, Coder, Fixer).
-*   `E2B_API_KEY`: Required for the secure sandbox environment.
-*   `GEMINI_API_KEY` or `GOOGLE_API_KEY`: Required for Gemini models (LLMReviewer Auditor, QA Analyst).
-*   `ANTHROPIC_API_KEY`: Optional. Required if using Claude models directly (can use OpenRouter instead).
-*   `OPENROUTER_API_KEY`: Optional. Recommended for unified access to multiple model providers.
+```env
+# Jules API (Architect/Coder)
+JULES_API_KEY=your_jules_key
+
+# Sandbox (Execution)
+E2B_API_KEY=e2b_...
+
+# Models (Auditor/QA)
+OPENROUTER_API_KEY=sk-or-...
+# Or specific keys: GEMINI_API_KEY, ANTHROPIC_API_KEY
+```
 
 #### Multi-Model Configuration
 
@@ -95,33 +108,32 @@ SMART_MODEL=claude-3-5-sonnet-20241022
 
 # Fast model for LLMReviewer (auditing) & QA Analyst - Speed & context required
 FAST_MODEL=gemini-2.0-flash-exp
-
-# API Keys
-JULES_API_KEY=your_jules_key
-E2B_API_KEY=e2b_...
-OPENROUTER_API_KEY=sk-or-...
 ```
 
 ## 🚀 Usage
 
 ### 1. Initialize Project
 
+Navigate to your empty project folder and run:
+
 ```bash
-uv run manage.py init
+ac-cdd init
 ```
 
-Edit `dev_documents/ALL_SPEC.md` with your project requirements.
+This creates the `dev_documents/` structure and a default `ac_cdd_config.py` in your current directory.
+
+**Next Step:** Edit `dev_documents/ALL_SPEC.md` with your raw project requirements.
 
 ### 2. Generate Architecture & Start Session
 
 ```bash
-uv run manage.py gen-cycles
+ac-cdd gen-cycles
 ```
 
-This creates a **development session** with:
-- Integration branch: `dev/session-{timestamp}`
-- Architecture branch: `dev/session-{timestamp}/arch`
-- System architecture and cycle plans
+This acts as the **Architect**:
+- Reads `ALL_SPEC.md`
+- Generates `SYSTEM_ARCHITECTURE.md`, `SPEC.md`, and `UAT.md`
+- Creates a **development session** and branches (e.g., `dev/session-{timestamp}`)
 
 **Session is saved** to `.ac_cdd_session.json` for automatic resumption.
 
@@ -129,11 +141,11 @@ This creates a **development session** with:
 
 ```bash
 # Run individual cycles (session auto-loaded)
-uv run manage.py run-cycle --id 01
-uv run manage.py run-cycle --id 02
+ac-cdd run-cycle --id 01
+ac-cdd run-cycle --id 02
 
 # Or run all cycles sequentially
-uv run manage.py run-cycle --id all --auto
+ac-cdd run-cycle --id all --auto
 ```
 
 Each cycle:
@@ -145,27 +157,19 @@ Each cycle:
 ### 4. Finalize Session
 
 ```bash
-uv run manage.py finalize-session
+ac-cdd finalize-session
 ```
 
-Creates a **final Pull Request** from integration branch to `main`:
-- Contains all architecture + cycle implementations
-- Enables batch review of entire session
-- Merge to deploy to production
+Creates a **final Pull Request** from integration branch to `main`.
 
-**Session-Based Workflow Benefits:**
-- ✅ Isolated development - work doesn't pollute `main`
-- ✅ Batch review - review entire session at once
-- ✅ Easy rollback - delete integration branch to abandon session
-- ✅ Clean history - squash merge to `main`
+## Contributing
 
-## Development (of this tool)
+If you want to modify the AC-CDD framework itself:
 
-If you are contributing to the AC-CDD core itself:
-
-*   The core logic is in `dev_src/ac_cdd_core`.
-*   Run tests using: `uv run pytest tests/`
-*   Linting: `uv run ruff check dev_src/`
+1.  Clone this repository.
+2.  Modify code in `dev_src/ac_cdd_core`.
+3.  Rebuild the Docker image: `docker build -t ac-cdd .`
+4.  Test your changes using the alias.
 
 ## License
 
