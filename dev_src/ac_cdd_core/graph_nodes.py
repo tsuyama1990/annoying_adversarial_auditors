@@ -205,7 +205,7 @@ class CycleNodes:
         if status == "next_auditor":
             return "auditor"
         elif status == "cycle_approved":
-            return "approved"
+            return "uat_evaluate"
         elif status == "retry_fix":
             return "coder_session"
         elif status == "failed":
