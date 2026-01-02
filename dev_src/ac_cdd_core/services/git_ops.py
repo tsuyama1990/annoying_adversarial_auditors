@@ -183,14 +183,7 @@ class GitManager:
         4. Pop stash.
         5. If conflict on .ac_cdd_session.json, force resolve to local (stashed) version.
         """
-        status = await self._run_git(["status", "--porcelain"])
-        stashed = False
-
-        if status:
-            logger.info("Uncommitted changes detected. Performing smart checkout...")
-            # Stash with specific message to identify it
-            await self._run_git(["stash", "push", "-u", "-m", "AC-CDD Auto-stash for checkout"])
-            stashed = True
+        stashed = await self._stash_changes()
 
         try:
             if is_pr:
@@ -198,33 +191,6 @@ class GitManager:
                 cmd = [self.gh_cmd, "pr", "checkout", target]
                 if force:
                     cmd.append("--force")
-                else:
-                    # We usually remove --force because we are now clean (stashed)
-                    # and we want to preserve safety, unless explicit force is requested.
-                    # Note: Previous code hardcoded --force for PRs, but we'll respect the flag now
-                    # or should we default to force for PRs?
-                    # The previous implementation had: [..., "--force"], check=True.
-                    # It seems it was aggressive. Let's respect the `force` arg.
-                    # If the user passed force=False, we don't force.
-                    # BUT wait, the original code had "--force" unconditionally.
-                    # "We remove --force because we are now clean (stashed)" comment was there
-                    # but the code actually HAD "--force".
-                    # Let's trust the new requirement: respect `force` param.
-                    pass
-
-                # However, for PR checkout, `gh` might fail if local branch exists.
-                # If we stashed, we should be clean.
-                # Let's stick to the plan: pass --force if force is True.
-                # And maybe we should keep the old behavior if force is NOT passed?
-                pass
-
-                # Re-reading original code:
-                # await self.runner.run_command([..., "--force"], check=True)
-                # It WAS forcing.
-                # I will change it to only force if `force` is True.
-                if force:
-                    cmd.append("--force")
-
                 await self.runner.run_command(cmd, check=True)
             else:
                 # Normal Branch Checkout
@@ -234,7 +200,7 @@ class GitManager:
                 await self._run_git(cmd)
 
         except Exception as e:
-            # If checkout failed, try to pop stash to restore state if we stuck on prev branch
+            # If checkout failed, try to pop stash to restore state
             if stashed:
                 logger.warning("Checkout failed. Restoring local changes...")
                 try:
@@ -250,43 +216,57 @@ class GitManager:
             raise e
 
         if stashed:
-            logger.info("Restoring local changes...")
-            try:
-                await self._run_git(["stash", "pop"])
-            except RuntimeError:
-                # Conflict detected
-                logger.warning("Conflict detected during stash restoration.")
+            await self._restore_stash()
 
-                # Check for .ac_cdd_session.json conflict specifically
-                # Logic: We want the STASHED version.
-                # When popping, the stash is applied to the working tree.
-                # A conflict means the branch content differs from stash content.
-                # We want the STASH content for session.json.
+    async def _stash_changes(self) -> bool:
+        """Checks for uncommitted changes and stashes them if found."""
+        status = await self._run_git(["status", "--porcelain"])
+        if status:
+            logger.info("Uncommitted changes detected. Performing smart checkout...")
+            # Stash with specific message to identify it
+            await self._run_git(["stash", "push", "-u", "-m", "AC-CDD Auto-stash for checkout"])
+            return True
+        return False
 
-                # We can checkout the file from the stash explicitly.
-                # 'stash@{0}' is the one we just tried to pop (it stays if failed)
-                try:
-                    logger.info("Auto-resolving .ac_cdd_session.json to local version...")
-                    # We overwrite the file with the content from the stash
-                    await self._run_git(["checkout", "stash@{0}", "--", ".ac_cdd_session.json"])
-                    await self._run_git(["add", ".ac_cdd_session.json"])
-                    logger.info(".ac_cdd_session.json resolved.")
+    async def _restore_stash(self) -> None:
+        """Restores stashed changes, resolving session file conflicts."""
+        logger.info("Restoring local changes...")
+        try:
+            await self._run_git(["stash", "pop"])
+        except RuntimeError:
+            # Conflict detected
+            logger.warning("Conflict detected during stash restoration.")
+            await self._resolve_session_conflict()
 
-                    # Check if other conflicts remain
-                    status = await self._run_git(["status", "--porcelain"])
-                    if "UU" in status:  # UU = Both modified (conflict)
-                        logger.warning(
-                            "Other conflicts exist. Please resolve them manually.\n"
-                            "Local changes have been applied but conflicted."
-                        )
-                    else:
-                        # If clear, drop the stash (since pop failed to drop it due to conflict)
-                        await self._run_git(["stash", "drop"])
-                        logger.info("Stash dropped after resolution.")
+    async def _resolve_session_conflict(self) -> None:
+        """
+        Resolves conflicts specifically for .ac_cdd_session.json by preferring the stashed version.
+        """
+        # Check for .ac_cdd_session.json conflict specifically
+        # Logic: We want the STASHED version.
+        try:
+            logger.info("Auto-resolving .ac_cdd_session.json to local version...")
+            # We overwrite the file with the content from the stash
+            # 'stash@{0}' is the one we just tried to pop
+            await self._run_git(["checkout", "stash@{0}", "--", ".ac_cdd_session.json"])
+            await self._run_git(["add", ".ac_cdd_session.json"])
+            logger.info(".ac_cdd_session.json resolved.")
 
-                except Exception as ex:
-                    logger.error(f"Failed to auto-resolve session file: {ex}")
-                    raise
+            # Check if other conflicts remain
+            status = await self._run_git(["status", "--porcelain"])
+            if "UU" in status:  # UU = Both modified (conflict)
+                logger.warning(
+                    "Other conflicts exist. Please resolve them manually.\n"
+                    "Local changes have been applied but conflicted."
+                )
+            else:
+                # If clear, drop the stash (since pop failed to drop it due to conflict)
+                await self._run_git(["stash", "drop"])
+                logger.info("Stash dropped after resolution.")
+
+        except Exception as ex:
+            logger.error(f"Failed to auto-resolve session file: {ex}")
+            raise
 
     async def checkout_pr(self, pr_url: str) -> None:
         """
