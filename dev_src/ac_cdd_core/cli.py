@@ -160,7 +160,9 @@ def init() -> None:
             f"   {settings.paths.documents_dir}/ALL_SPEC.md\n"
             "   (This file was copied from templates. Please define your project goals here.)\n\n"
             "2. Generate architecture and cycle plans:\n"
-            "   docker-compose run ac-cdd gen-cycles"
+            "   docker-compose run ac-cdd gen-cycles\n\n"
+            "Pro Tip: Add this alias to your shell config (.bashrc/.zshrc) for easier access:\n"
+            "   alias ac-cdd='docker-compose run --rm ac-cdd'"
         )
         console.print(Panel(msg, title="Next Action Guide", style="bold green", expand=False))
     except Exception as e:

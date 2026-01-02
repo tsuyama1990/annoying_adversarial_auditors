@@ -170,7 +170,9 @@ class GitManager:
         except Exception as e:
             logger.warning(f"Failed to auto-merge PR. Please merge manually. Error: {e}")
 
-    async def smart_checkout(self, target: str, is_pr: bool = False) -> None:
+    async def smart_checkout(
+        self, target: str, is_pr: bool = False, force: bool = False
+    ) -> None:
         """
         Robust checkout that handles local changes (e.g., .ac_cdd_session.json).
 
@@ -193,15 +195,43 @@ class GitManager:
         try:
             if is_pr:
                 # PR Checkout (using gh)
-                # We remove --force because we are now clean (stashed)
-                # and we want to preserve safety.
-                await self.runner.run_command(
-                    [self.gh_cmd, "pr", "checkout", target, "--force"],
-                    check=True,
-                )
+                cmd = [self.gh_cmd, "pr", "checkout", target]
+                if force:
+                    cmd.append("--force")
+                else:
+                    # We usually remove --force because we are now clean (stashed)
+                    # and we want to preserve safety, unless explicit force is requested.
+                    # Note: Previous code hardcoded --force for PRs, but we'll respect the flag now
+                    # or should we default to force for PRs?
+                    # The previous implementation had: [..., "--force"], check=True.
+                    # It seems it was aggressive. Let's respect the `force` arg.
+                    # If the user passed force=False, we don't force.
+                    # BUT wait, the original code had "--force" unconditionally.
+                    # "We remove --force because we are now clean (stashed)" comment was there
+                    # but the code actually HAD "--force".
+                    # Let's trust the new requirement: respect `force` param.
+                    pass
+
+                # However, for PR checkout, `gh` might fail if local branch exists.
+                # If we stashed, we should be clean.
+                # Let's stick to the plan: pass --force if force is True.
+                # And maybe we should keep the old behavior if force is NOT passed?
+                pass
+
+                # Re-reading original code:
+                # await self.runner.run_command([..., "--force"], check=True)
+                # It WAS forcing.
+                # I will change it to only force if `force` is True.
+                if force:
+                    cmd.append("--force")
+
+                await self.runner.run_command(cmd, check=True)
             else:
                 # Normal Branch Checkout
-                await self._run_git(["checkout", target])
+                cmd = ["checkout", target]
+                if force:
+                    cmd.append("-f")
+                await self._run_git(cmd)
 
         except Exception as e:
             # If checkout failed, try to pop stash to restore state if we stuck on prev branch
@@ -211,6 +241,12 @@ class GitManager:
                     await self._run_git(["stash", "pop"])
                 except Exception:
                     logger.error("Failed to restore stash after failed checkout.")
+
+            # Log specific advice
+            logger.error(
+                f"Failed to checkout '{target}'. "
+                "Please stash/commit your changes or use --force."
+            )
             raise e
 
         if stashed:
@@ -260,12 +296,18 @@ class GitManager:
         await self.smart_checkout(pr_url, is_pr=True)
         logger.info(f"Checked out PR {pr_url} successfully.")
 
-    async def checkout_branch(self, branch_name: str) -> None:
+    async def checkout_branch(self, branch_name: str, force: bool = False) -> None:
         """
         Checks out an existing branch.
         """
+        # Ensure we have the latest remote state before checkout
+        try:
+            await self._run_git(["fetch"])
+        except Exception as e:
+            logger.warning(f"Git fetch failed before checkout: {e}")
+
         logger.info(f"Checking out branch: {branch_name}...")
-        await self.smart_checkout(branch_name, is_pr=False)
+        await self.smart_checkout(branch_name, is_pr=False, force=force)
 
     async def pull_changes(self) -> None:
         """

@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  ac-cdd:
+    image: tsuyama1990/ac-cdd-agent:latest
+    container_name: ac-cdd-agent
+
+    # Mount current directory to /app
+    volumes:
+      - .:/app
+      # Optional: Mount global config if exists
+      - ${HOME}/.ac_cdd/.env:/root/.ac_cdd/.env
+
+    # Load environment variables
+    env_file:
+      - .env
+      - ${HOME}/.ac_cdd/.env
+
+    environment:
+      # Pass Host UID/GID to fix permission issues
+      - HOST_UID=${UID:-1000}
+      - HOST_GID=${GID:-1000}
+
+      # GitHub Token is required
+      # - GH_TOKEN=${GH_TOKEN}
+
+      # Configuration Examples (Override here if needed)
+      # - AC_CDD_REVIEWER__SMART_MODEL=openrouter/anthropic/claude-3-5-sonnet
+
+      # Final Resort for Git Identity (if still facing issues)
+      # - GIT_AUTHOR_NAME=AC-CDD-Agent
+      # - GIT_AUTHOR_EMAIL=agent@ac-cdd.com
+
+    # Keep container alive or run command
+    # entrypoint.sh is the entrypoint, CMD is passed to it
+    command: ["ac-cdd"]
+
+    # Interactive mode support
+    stdin_open: true
+    tty: true

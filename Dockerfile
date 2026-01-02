@@ -44,5 +44,5 @@ ENV PYTHONUNBUFFERED=1
 ENV AC_CDD_TEMPLATE_PATH=/opt/ac_cdd/templates
 # AC_CDD_CONFIG_PATH is no longer needed
 
-ENTRYPOINT ["ac-cdd"]
-CMD ["--help"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["ac-cdd"]

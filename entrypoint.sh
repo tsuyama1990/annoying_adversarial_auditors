@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Add /app to safe.directory to allow git operations regardless of owner
+git config --system --add safe.directory /app
+
 # entrypoint.sh - Handle user permissions and execute command
 
 # If HOST_UID and HOST_GID are passed, we might need to adjust permissions
