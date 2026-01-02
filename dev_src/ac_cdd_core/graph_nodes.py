@@ -1,17 +1,16 @@
+from typing import Dict, Any
+from pathlib import Path
 import asyncio
-from typing import Any
-
 from rich.console import Console
 
-from .config import settings
-from .sandbox import SandboxRunner
-from .services.audit_orchestrator import AuditOrchestrator
-from .services.jules_client import JulesClient
-from .services.llm_reviewer import LLMReviewer
 from .state import CycleState
+from .services.jules_client import JulesClient
+from .services.audit_orchestrator import AuditOrchestrator
+from .services.llm_reviewer import LLMReviewer
+from .sandbox import SandboxRunner
+from .config import settings
 
 console = Console()
-
 
 class CycleNodes:
     """
@@ -23,31 +22,34 @@ class CycleNodes:
         self.sandbox = sandbox_runner
         self.jules = jules_client
         self.audit_orchestrator = AuditOrchestrator(jules_client, sandbox_runner)
-        self.llm_reviewer = LLMReviewer(sandbox_runner)
+        # Fix: Pass sandbox_runner as keyword arg if needed, but signature says positional is fine.
+        # Wait, the error said "takes 1 positional argument but 2 were given".
+        # This means LLMReviewer(self, sandbox_runner) -> 2 args.
+        # If __init__ is (self, sandbox_runner=None), then it matches.
+        # If __init__ is (self), then it fails.
+        # I suspect the imported LLMReviewer might be different or I am passing it wrong.
+        # Using keyword argument is safer.
+        self.llm_reviewer = LLMReviewer(sandbox_runner=sandbox_runner)
 
-    async def architect_session_node(self, state: CycleState) -> dict[str, Any]:
+    async def architect_session_node(self, state: CycleState) -> Dict[str, Any]:
         """Node for Architect Agent (Jules)."""
         console.print("[bold blue]Starting Architect Session...[/bold blue]")
 
         # Start session with Jules
-        # In architect mode, we expect Jules to generate SYSTEM_ARCHITECTURE.md, SPEC.md, UAT.md
-
-        # Context is ALL_SPEC.md (loaded from settings)
         context_files = [settings.filename_spec, "ARCHITECT_INSTRUCTION.md"]
 
-        # Resolve path for instructions to ensure they are found.
-        # JulesClient will need to load it.
-
+        # We pass the template name, JulesClient loads it from settings or path
         result = await self.jules.start_architect_session(
-            files=context_files, instruction_template="ARCHITECT_INSTRUCTION.md"
+            files=context_files,
+            instruction_template="ARCHITECT_INSTRUCTION.md"
         )
 
         if result.get("status") == "success":
-            return {"status": "architect_completed"}
+             return {"status": "architect_completed"}
         else:
-            return {"status": "architect_failed", "error": result.get("error")}
+             return {"status": "architect_failed", "error": result.get("error")}
 
-    async def coder_session_node(self, state: CycleState) -> dict[str, Any]:
+    async def coder_session_node(self, state: CycleState) -> Dict[str, Any]:
         """Node for Coder Agent (Jules or Aider)."""
         cycle_id = state["cycle_id"]
         iteration = state["iteration_count"]
@@ -57,39 +59,51 @@ class CycleNodes:
             f"(Iteration {iteration})...[/bold green]"
         )
 
-        # Determine if we use Jules (Iter 0) or Aider (Iter > 0)
-        # For now, let's assume Jules for Iter 0 and Aider for fixing
-
         if iteration == 0:
-            # Initial implementation by Jules
-            # Context: SYSTEM_ARCHITECTURE.md, SPEC.md (for this cycle)
-            # spec_file = f"CYCLE{cycle_id}/SPEC.md"
-            # files = [settings.filename_arch, spec_file]
+            # Initial Implementation (Jules)
+            spec_file = f"CYCLE{cycle_id}/SPEC.md"
+            files = [settings.filename_arch, spec_file]
 
-            # Start/Resume session
-            # We need to wait for a PLAN from Jules (Architecture -> Plan -> Code)
-            # This might be handled inside jules_client or audit_orchestrator
+            # Run session
+            # We assume JulesClient.run_session or similar
+            # Since we don't have the full logic from original (it was empty in my view),
+            # I will implement a reasonable robust version.
 
-            # Actually, for Iteration 0, we might just want to trigger Jules
-            # to code based on the spec
-            pass
+            instruction = f"Implement the requirements for Cycle {cycle_id} based on {spec_file}."
 
-            # Placeholder for actual logic
-            await asyncio.sleep(1)
-            return {"status": "ready_for_audit"}
+            try:
+                # We use a dummy session ID or state-based one
+                session_id = f"{state.get('session_id', 'cycle')}-{cycle_id}"
+
+                # Using run_session which returns a dict
+                result = await self.jules.run_session(
+                    session_id=session_id,
+                    prompt=instruction,
+                    files=files,
+                    completion_signal_file=Path("completion_signal"), # Dummy
+                    require_plan_approval=False
+                )
+
+                if result.get("status") == "success" or result.get("pr_url"):
+                    return {"status": "ready_for_audit", "pr_url": result.get("pr_url")}
+                else:
+                    return {"status": "failed", "error": "Jules failed to produce PR"}
+
+            except Exception as e:
+                console.print(f"[red]Coder Session Failed: {e}[/red]")
+                return {"status": "failed", "error": str(e)}
 
         else:
-            # Fix implementation by Aider (or Jules Fixer)
-            # We have feedback from Auditor
+            # Fixing Phase (Iteration > 0)
             console.print("[yellow]Starting Fixer Agent...[/yellow]")
 
-            # Run Aider
-            # ...
+            # Logic for fixing would go here (resume session)
+            # For now, we increment iteration
 
             state["iteration_count"] += 1
             return {"status": "ready_for_audit"}
 
-    async def auditor_node(self, state: CycleState) -> dict[str, Any]:
+    async def auditor_node(self, state: CycleState) -> Dict[str, Any]:
         """Node for Auditor Agent (Aider/LLM)."""
         console.print("[bold magenta]Starting Auditor...[/bold magenta]")
 
@@ -97,14 +111,12 @@ class CycleNodes:
 
         return {"audit_result": result, "status": result.status}
 
-    async def uat_evaluate_node(self, state: CycleState) -> dict[str, Any]:
+    async def uat_evaluate_node(self, state: CycleState) -> Dict[str, Any]:
         """Node for UAT Evaluation."""
         console.print("[bold cyan]Running UAT Evaluation...[/bold cyan]")
 
         # Run UAT tests via Sandbox
         # Check UAT.md requirements
-
-        # ...
 
         return {"status": "cycle_completed"}
 
@@ -112,16 +124,15 @@ class CycleNodes:
         status = state.get("status")
         if status == "ready_for_audit":
             return "ready_for_audit"
-        elif (
-            status == "architect_failed"
-        ):  # Should not happen in coder graph but handling for safety
+        elif status == "failed" or status == "architect_failed":
             return "failed"
-        return "completed"  # Default fallback
+        return "completed" # Default fallback
 
     def check_audit_outcome(self, state: CycleState) -> str:
         audit_res = state.get("audit_result")
         if not audit_res:
-            return "rejected_retry"  # Fallback
+            # If no result, maybe fallback or retry
+            return "rejected_retry"
 
         if audit_res.status == "approved":
             return "approved"

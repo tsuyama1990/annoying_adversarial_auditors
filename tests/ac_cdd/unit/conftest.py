@@ -1,7 +1,30 @@
 from unittest.mock import MagicMock
 
 import pytest
+from unittest.mock import patch
 from ac_cdd_core.service_container import ServiceContainer
+from ac_cdd_core.config import Settings
+
+
+@pytest.fixture(autouse=True)
+def mock_settings(monkeypatch):
+    """Mock the global settings object and env vars for all unit tests."""
+    # Pre-emptively set environment variables to avoid pydantic-ai import errors
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("JULES_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("E2B_API_KEY", "dummy_key_for_test")
+
+    # Create a default Settings object (using defaults defined in class)
+    try:
+        real_defaults = Settings()
+    except Exception:
+        # Fallback if creation fails (e.g. missing required env vars if any)
+        real_defaults = MagicMock()
+
+    with patch("ac_cdd_core.config.settings", real_defaults):
+        yield real_defaults
 
 
 @pytest.fixture

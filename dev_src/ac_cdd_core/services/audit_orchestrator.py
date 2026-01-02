@@ -17,9 +17,12 @@ class AuditOrchestrator:
     the PlanAuditor (Reviewer).
     """
 
-    def __init__(self):
-        self.jules = JulesClient()
+    def __init__(
+        self, jules_client: JulesClient | None = None, sandbox_runner: Any | None = None
+    ):
+        self.jules = jules_client or JulesClient()
         self.auditor = PlanAuditor()
+        self.sandbox = sandbox_runner
 
     async def run_interactive_session(
         self, prompt: str, source_name: str, spec_files: dict[str, str], max_retries: int = 3
