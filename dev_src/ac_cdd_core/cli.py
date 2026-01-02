@@ -166,9 +166,7 @@ def gen_cycles(
 
         # Initialize state with session
         initial_state = CycleState(
-            cycle_id=settings.DUMMY_CYCLE_ID, 
-            session_id=session_id,
-            planned_cycle_count=cycles
+            cycle_id=settings.DUMMY_CYCLE_ID, session_id=session_id, planned_cycle_count=cycles
         )
 
         # Run the graph
@@ -231,9 +229,7 @@ def run_cycle(
     """
     import asyncio
 
-    async def execute_single_cycle(
-        target_cycle: str, override_resume: bool | None = None
-    ) -> None:
+    async def execute_single_cycle(target_cycle: str, override_resume: bool | None = None) -> None:
         # Determine strict resume mode for this specific cycle execution
         # If override is provided (from _run_all), use it. Else use CLI flag.
         should_resume = override_resume if override_resume is not None else resume
@@ -267,7 +263,8 @@ def run_cycle(
                     target_resume_id = resume_id if resume_id else None
                     resume_info = await SessionManager.resume_jules_session(target_resume_id)
                     console.print(
-                        f"[green]✓ Resumed Jules session with PR: {resume_info.get('pr_url', 'None')}[/green]"
+                        f"[green]✓ Resumed Jules session with PR: "
+                        f"{resume_info.get('pr_url', 'None')}[/green]"
                     )
 
                 # Load session (Sync)
@@ -282,7 +279,7 @@ def run_cycle(
 
                 # AUTO-DETECT CYCLE ID if Resuming and using default "01" (Single Cycle Mode)
                 # Only apply switching if NOT triggered by _run_all iteration (cycle_id != 'all')
-                
+
                 # actually execute_single_cycle arg matches.
                 # If we are in 'all' mode, we handled switch in _run_all.
                 if (
@@ -293,7 +290,8 @@ def run_cycle(
                 ):
                     if saved_active_cycle != "01":
                         console.print(
-                            f"[yellow]Auto-Switching to saved Active Cycle: {saved_active_cycle}[/yellow]"
+                            f"[yellow]Auto-Switching to saved Active Cycle: "
+                            f"{saved_active_cycle}[/yellow]"
                         )
                         target_cycle = saved_active_cycle
 
@@ -384,14 +382,14 @@ def run_cycle(
         from pathlib import Path
 
         raw_list = []
-        
+
         # 1. Try plan_status.json (Primary Source)
         # Check both templates dir (where we saw it) and docs dir (where it might be intended)
         possible_paths = [
             Path(settings.paths.templates) / "plan_status.json",
             Path(settings.paths.documents_dir) / "plan_status.json",
         ]
-        
+
         for p in possible_paths:
             if p.exists():
                 try:
@@ -401,9 +399,10 @@ def run_cycle(
                         raw_list = found_cycles
                         # console.print(f"[dim]Loaded cycle plan from {p.name}: {raw_list}[/dim]")
                         break
-                except Exception:
-                    pass
-        
+                except Exception as e:
+                    # Ignore parsing errors for now
+                    logger.debug(f"Parsing error: {e}")
+
         # 2. Fallback: Scan Directory for CYCLExx
         if not raw_list:
             templates_dir = Path(settings.paths.templates)
@@ -420,7 +419,7 @@ def run_cycle(
 
         # 3. Last Resort Fallback
         if not raw_list:
-             raw_list = ["01", "02", "03", "04", "05"]
+            raw_list = ["01", "02", "03", "04", "05"]
 
         cycles_to_run = raw_list if cycle_id.lower() == "all" else [cycle_id]
 
@@ -435,8 +434,10 @@ def run_cycle(
                 active = data["active_cycle_id"]
                 if active in raw_list:
                     start_index = raw_list.index(active)
+                    skipped = raw_list[start_index - 1] if start_index > 0 else 'None'
                     console.print(
-                        f"[yellow]Taking up from saved active cycle: {active} (Skipping 01-{raw_list[start_index - 1] if start_index > 0 else 'None'})[/yellow]"
+                        f"[yellow]Taking up from saved active cycle: {active} "
+                        f"(Skipping 01-{skipped})[/yellow]"
                     )
                     cycles_to_run = raw_list[start_index:]
 

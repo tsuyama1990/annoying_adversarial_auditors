@@ -50,7 +50,6 @@ class ProjectManager:
         templates_dest = Path(templates_path)
         templates_dest.mkdir(parents=True, exist_ok=True)
 
-
         # Create ALL_SPEC.md (Project Specs) if not exists
         all_spec_dest = docs_dir / "ALL_SPEC.md"
         if not all_spec_dest.exists():

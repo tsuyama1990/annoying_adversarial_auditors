@@ -95,6 +95,8 @@ def check_api_key() -> None:
         #     "API Key not found! Please set GOOGLE_API_KEY (or OPENROUTER_API_KEY) "
         #     "in your .env file."
         # )
+
+
 class KeepAwake:
     """
     Context manager to prevent system sleep/suspension during long operations.

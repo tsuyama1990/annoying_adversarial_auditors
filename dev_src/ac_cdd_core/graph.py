@@ -1,13 +1,11 @@
-from typing import Dict, Any, List
-import asyncio
-from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 
-from .state import CycleState, CycleStatus
-from .services.jules_client import JulesClient
-from .sandbox import SandboxRunner
-from .config import settings
 from .graph_nodes import CycleNodes
+from .sandbox import SandboxRunner
+from .services.jules_client import JulesClient
+from .state import CycleState
+
 
 class GraphBuilder:
     def __init__(self, sandbox_runner: SandboxRunner, jules_client: JulesClient):
@@ -41,8 +39,8 @@ class GraphBuilder:
             {
                 "ready_for_audit": "auditor",
                 "failed": END,
-                "completed": "uat_evaluate" # Direct to UAT if audit skipped (e.g. iteration 0)
-            }
+                "completed": "uat_evaluate",  # Direct to UAT if audit skipped (e.g. iteration 0)
+            },
         )
 
         # Conditional edge from auditor
@@ -52,8 +50,8 @@ class GraphBuilder:
             {
                 "approved": "uat_evaluate",
                 "rejected_retry": "coder_session",
-                "rejected_max_retries": END
-            }
+                "rejected_max_retries": END,
+            },
         )
 
         workflow.add_edge("uat_evaluate", END)
