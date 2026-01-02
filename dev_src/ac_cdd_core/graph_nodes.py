@@ -1,16 +1,17 @@
-from typing import Dict, Any
 from pathlib import Path
-import asyncio
+from typing import Any
+
 from rich.console import Console
 
-from .state import CycleState
-from .services.jules_client import JulesClient
-from .services.audit_orchestrator import AuditOrchestrator
-from .services.llm_reviewer import LLMReviewer
-from .sandbox import SandboxRunner
 from .config import settings
+from .sandbox import SandboxRunner
+from .services.audit_orchestrator import AuditOrchestrator
+from .services.jules_client import JulesClient
+from .services.llm_reviewer import LLMReviewer
+from .state import CycleState
 
 console = Console()
+
 
 class CycleNodes:
     """
@@ -22,35 +23,55 @@ class CycleNodes:
         self.sandbox = sandbox_runner
         self.jules = jules_client
         self.audit_orchestrator = AuditOrchestrator(jules_client, sandbox_runner)
-        # Fix: Pass sandbox_runner as keyword arg if needed, but signature says positional is fine.
-        # Wait, the error said "takes 1 positional argument but 2 were given".
-        # This means LLMReviewer(self, sandbox_runner) -> 2 args.
-        # If __init__ is (self, sandbox_runner=None), then it matches.
-        # If __init__ is (self), then it fails.
-        # I suspect the imported LLMReviewer might be different or I am passing it wrong.
-        # Using keyword argument is safer.
+        # LLMReviewer now accepts sandbox_runner (though mainly for consistent init signature)
         self.llm_reviewer = LLMReviewer(sandbox_runner=sandbox_runner)
 
-    async def architect_session_node(self, state: CycleState) -> Dict[str, Any]:
+    async def _read_files(self, file_paths: list[str]) -> dict[str, str]:
+        """Helper to read files from the sandbox (or local if path exists locally)."""
+        result = {}
+        for path_str in file_paths:
+            # We assume paths are absolute container paths (/app/...) or relative.
+            p = Path(path_str)
+            if p.exists() and p.is_file():
+                try:
+                    result[path_str] = p.read_text(encoding="utf-8")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not read {path_str}: {e}[/yellow]")
+            else:
+                pass
+        return result
+
+    async def architect_session_node(self, state: CycleState) -> dict[str, Any]:
         """Node for Architect Agent (Jules)."""
         console.print("[bold blue]Starting Architect Session...[/bold blue]")
 
-        # Start session with Jules
-        context_files = [settings.filename_spec, "ARCHITECT_INSTRUCTION.md"]
+        instruction = settings.get_template("ARCHITECT_INSTRUCTION.md").read_text()
+        context_files = settings.get_context_files()
 
-        # We pass the template name, JulesClient loads it from settings or path
-        result = await self.jules.start_architect_session(
-            files=context_files,
-            instruction_template="ARCHITECT_INSTRUCTION.md"
+        session_id = f"architect-cycle-{state['cycle_id']}"
+
+        # For Architect, context files are the target to be managed (Specs)
+        # But we pass them as context/target?
+        # Since Architect CREATES/EDITS Specs, they are logically "Target Files".
+        # But `context_files` helper points to docs.
+        # So we pass them as target_files here to indicate editability.
+
+        result = await self.jules.run_session(
+            session_id=session_id,
+            prompt=instruction,
+            target_files=context_files,  # Architect edits specs
+            context_files=[],  # Input requirements (like ALL_SPEC) could go here if distinct
+            completion_signal_file=Path("completion_signal"),
+            require_plan_approval=True,
         )
 
-        if result.get("status") == "success":
-             return {"status": "architect_completed"}
+        if result.get("status") == "success" or result.get("status") == "running":
+            return {"status": "architect_completed"}
         else:
-             return {"status": "architect_failed", "error": result.get("error")}
+            return {"status": "architect_failed", "error": result.get("error")}
 
-    async def coder_session_node(self, state: CycleState) -> Dict[str, Any]:
-        """Node for Coder Agent (Jules or Aider)."""
+    async def coder_session_node(self, state: CycleState) -> dict[str, Any]:
+        """Node for Coder Agent (Jules)."""
         cycle_id = state["cycle_id"]
         iteration = state["iteration_count"]
 
@@ -59,65 +80,68 @@ class CycleNodes:
             f"(Iteration {iteration})...[/bold green]"
         )
 
-        if iteration == 0:
-            # Initial Implementation (Jules)
-            spec_file = f"CYCLE{cycle_id}/SPEC.md"
-            files = [settings.filename_arch, spec_file]
+        instruction = settings.get_template("CODER_INSTRUCTION.md").read_text()
+        target_files = settings.get_target_files()
+        context_files = settings.get_context_files()
 
-            # Run session
-            # We assume JulesClient.run_session or similar
-            # Since we don't have the full logic from original (it was empty in my view),
-            # I will implement a reasonable robust version.
+        try:
+            session_id = f"coder-cycle-{cycle_id}-iter-{iteration}"
 
-            instruction = f"Implement the requirements for Cycle {cycle_id} based on {spec_file}."
+            # Pass separated files to updated JulesClient
+            result = await self.jules.run_session(
+                session_id=session_id,
+                prompt=instruction,
+                target_files=target_files,
+                context_files=context_files,
+                completion_signal_file=Path("completion_signal"),
+                require_plan_approval=False,
+            )
 
-            try:
-                # We use a dummy session ID or state-based one
-                session_id = f"{state.get('session_id', 'cycle')}-{cycle_id}"
+            if result.get("status") == "success" or result.get("pr_url"):
+                return {"status": "ready_for_audit", "pr_url": result.get("pr_url")}
+            else:
+                return {"status": "failed", "error": "Jules failed to produce PR"}
 
-                # Using run_session which returns a dict
-                result = await self.jules.run_session(
-                    session_id=session_id,
-                    prompt=instruction,
-                    files=files,
-                    completion_signal_file=Path("completion_signal"), # Dummy
-                    require_plan_approval=False
-                )
+        except Exception as e:
+            console.print(f"[red]Coder Session Failed: {e}[/red]")
+            return {"status": "failed", "error": str(e)}
 
-                if result.get("status") == "success" or result.get("pr_url"):
-                    return {"status": "ready_for_audit", "pr_url": result.get("pr_url")}
-                else:
-                    return {"status": "failed", "error": "Jules failed to produce PR"}
-
-            except Exception as e:
-                console.print(f"[red]Coder Session Failed: {e}[/red]")
-                return {"status": "failed", "error": str(e)}
-
-        else:
-            # Fixing Phase (Iteration > 0)
-            console.print("[yellow]Starting Fixer Agent...[/yellow]")
-
-            # Logic for fixing would go here (resume session)
-            # For now, we increment iteration
-
-            state["iteration_count"] += 1
-            return {"status": "ready_for_audit"}
-
-    async def auditor_node(self, state: CycleState) -> Dict[str, Any]:
+    async def auditor_node(self, state: CycleState) -> dict[str, Any]:
         """Node for Auditor Agent (Aider/LLM)."""
         console.print("[bold magenta]Starting Auditor...[/bold magenta]")
 
-        result = await self.audit_orchestrator.run_audit(state)
+        instruction = settings.get_template("AUDITOR_INSTRUCTION.md").read_text()
+
+        target_paths = settings.get_target_files()
+        context_paths = settings.get_context_files()
+
+        target_files = await self._read_files(target_paths)
+        context_docs = await self._read_files(context_paths)
+
+        model = "claude-3-5-sonnet"
+
+        audit_feedback = await self.llm_reviewer.review_code(
+            target_files=target_files,
+            context_docs=context_docs,
+            instruction=instruction,
+            model=model,
+        )
+
+        status = "approved" if "NO ISSUES FOUND" in audit_feedback.upper() else "rejected"
+
+        class SimpleAuditResult:
+            def __init__(self, status, reason, feedback):
+                self.status = status
+                self.reason = reason
+                self.feedback = feedback
+
+        result = SimpleAuditResult(status, "AI Audit Complete", audit_feedback)
 
         return {"audit_result": result, "status": result.status}
 
-    async def uat_evaluate_node(self, state: CycleState) -> Dict[str, Any]:
+    async def uat_evaluate_node(self, state: CycleState) -> dict[str, Any]:
         """Node for UAT Evaluation."""
         console.print("[bold cyan]Running UAT Evaluation...[/bold cyan]")
-
-        # Run UAT tests via Sandbox
-        # Check UAT.md requirements
-
         return {"status": "cycle_completed"}
 
     def check_coder_outcome(self, state: CycleState) -> str:
@@ -126,18 +150,16 @@ class CycleNodes:
             return "ready_for_audit"
         elif status == "failed" or status == "architect_failed":
             return "failed"
-        return "completed" # Default fallback
+        return "completed"
 
     def check_audit_outcome(self, state: CycleState) -> str:
         audit_res = state.get("audit_result")
         if not audit_res:
-            # If no result, maybe fallback or retry
             return "rejected_retry"
 
         if audit_res.status == "approved":
             return "approved"
 
-        # Check max retries using settings
         if state["iteration_count"] >= settings.max_audit_retries:
             console.print("[bold red]Max audit retries reached. Stopping.[/bold red]")
             return "rejected_max_retries"

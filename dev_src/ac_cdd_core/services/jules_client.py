@@ -221,17 +221,21 @@ class JulesClient:
         self,
         session_id: str,
         prompt: str,
-        files: list[str],
-        completion_signal_file: Path,
+        files: list[str] | None = None,
+        completion_signal_file: Path | None = None,
         runner: Any = None,
         # target_branch: str = "main",  # REMOVED
         require_plan_approval: bool = False,  # NEW
+        target_files: list[str] | None = None,
+        context_files: list[str] | None = None,
     ) -> dict[str, Any]:
         """
         Orchestrates the Jules session:
         1. Creates a session with 'AUTO_CREATE_PR' mode.
         2. Polls for completion & Handles interaction.
         3. Returns the PR URL.
+
+        Supports separated target/context files for clearer separation in prompts.
         """
         # DETOUR for JulesClient (Async HTTPX logic)
         # Check if internal API client is in dummy mode AND http client is NOT mocked by test
@@ -289,7 +293,31 @@ class JulesClient:
         url = f"{self.base_url}/sessions"
 
         full_prompt = prompt
+
+        # Handle file context construction
+        all_files = []
         if files:
+            all_files.extend(files)
+
+        if target_files or context_files:
+            # Construct formatted prompt section
+            full_prompt += "\n\n" + "#" * 20 + "\nFILE CONTEXT:\n"
+
+            if context_files:
+                full_prompt += "\nREAD-ONLY CONTEXT (Do not edit):\n" + "\n".join(context_files)
+                all_files.extend(context_files)
+
+            if target_files:
+                full_prompt += "\n\nTARGET FILES (To be implemented/edited):\n" + "\n".join(
+                    target_files
+                )
+                all_files.extend(target_files)
+
+            # Deduplicate
+            all_files = list(set(all_files))
+
+        elif files:
+            # Legacy/Simple mode
             file_list_str = "\n".join(files)
             full_prompt += f"\n\nPlease focus on the following files:\n{file_list_str}"
 
