@@ -236,7 +236,7 @@ def gen_cycles(
                 from .services.git_ops import GitManager
 
                 git = GitManager()
-                await git.create_integration_branch(session_id_final)
+                await git.create_integration_branch(session_id_final, branch_name=integration_branch)
 
                 # Show success message
                 SuccessMessages.show_panel(

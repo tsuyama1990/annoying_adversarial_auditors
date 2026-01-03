@@ -349,12 +349,14 @@ class GitManager:
 
     # Session-Based Branch Operations
 
-    async def create_integration_branch(self, session_id: str, prefix: str = "dev") -> str:
+    async def create_integration_branch(
+        self, session_id: str, prefix: str = "dev", branch_name: str | None = None
+    ) -> str:
         """
         Creates integration branch from main for the session.
         Returns: integration branch name
         """
-        integration_branch = f"{prefix}/{session_id}/integration"
+        integration_branch = branch_name if branch_name else f"{prefix}/{session_id}/integration"
         logger.info(f"Creating integration branch: {integration_branch}")
 
         # Ensure we're on main and up to date
