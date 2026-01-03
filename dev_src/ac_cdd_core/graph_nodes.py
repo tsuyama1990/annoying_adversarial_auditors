@@ -69,8 +69,18 @@ class CycleNodes:
             require_plan_approval=True,
         )
 
+        # Calculate Integration Branch properly
+        prefix = settings.session.integration_branch_prefix
+        # Fallback if session_id is missing (shouldn't be)
+        sid = state.get("session_id") or session_id
+        integration_branch = f"{prefix}/{sid}/integration"
+
         if result.get("status") == "success" or result.get("status") == "running":
-            return {"status": "architect_completed", "current_phase": "architect_done"}
+            return {
+                "status": "architect_completed", 
+                "current_phase": "architect_done",
+                "integration_branch": integration_branch,
+            }
         else:
             return {"status": "architect_failed", "error": result.get("error")}
 

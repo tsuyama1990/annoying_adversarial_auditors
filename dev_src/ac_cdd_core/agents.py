@@ -55,6 +55,26 @@ def get_model(model_name: str) -> Any:
         # Get API key from settings
         api_key = settings.OPENROUTER_API_KEY
         if not api_key:
+            # Fallback 1: Check standard env var (in case prefix missing in .env)
+            api_key = os.getenv("OPENROUTER_API_KEY")
+
+        if not api_key:
+            # Fallback 2: Manual .env parsing
+            try:
+                if Path(".env").exists():
+                    content = Path(".env").read_text()
+                    for line in content.splitlines():
+                        if line.startswith("OPENROUTER_API_KEY="):
+                            parts = line.split("=", 1)
+                            if len(parts) > 1:
+                                candidate = parts[1].strip().strip('"').strip("'")
+                                if candidate:
+                                    api_key = candidate
+                                    break
+            except Exception:
+                pass
+
+        if not api_key:
             # Check if we are in a likely test environment or just missing the key
             # We will warn and return a dummy key to prevent import-time crashes in tests/CI
             # where the key might not be set but we mock the calls anyway.

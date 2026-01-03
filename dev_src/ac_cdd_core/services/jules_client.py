@@ -44,13 +44,20 @@ class JulesApiClient:
             self.api_key = os.getenv("JULES_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
         if not self.api_key:
-            # Last ditch attempt
+            # Last ditch attempt: Manual parsing
             try:
                 if Path(".env").exists():
                     content = Path(".env").read_text()
                     for line in content.splitlines():
-                        if line.startswith("JULES_API_KEY="):
-                            self.api_key = line.split("=", 1)[1].strip().strip('"')
+                        # Handle both keys
+                        key_part = line.split("=", 1)[0].strip()
+                        if key_part in ["JULES_API_KEY", "GOOGLE_API_KEY"]:
+                            parts = line.split("=", 1)
+                            if len(parts) > 1:
+                                candidate = parts[1].strip().strip('"').strip("'")
+                                if candidate:
+                                    self.api_key = candidate
+                                    break
             except Exception:
                 logger.debug("Skipping malformed .env line during key check.")
 
@@ -60,7 +67,11 @@ class JulesApiClient:
                 logger.warning("Jules API Key missing in Test Environment. Using dummy key.")
                 self.api_key = "dummy_jules_key"
             else:
-                raise ValueError("API Key not found for Jules API.")
+                raise ValueError(
+                    "API Key not found for Jules API. "
+                    "Please set JULES_API_KEY or GOOGLE_API_KEY in your .env file or environment variables. "
+                    "Note: If you have the variable in .env, ensure it is not empty."
+                )
 
         self.headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
 
@@ -195,8 +206,9 @@ class JulesClient:
         }
 
         # Quickstart: "To authenticate your requests, pass the API key in the X-Goog-Api-Key header"
-        if settings.JULES_API_KEY:
-            headers["X-Goog-Api-Key"] = settings.JULES_API_KEY
+        # Use the resolved key from the API client (handles env/settings fallback)
+        if self.api_client.api_key:
+            headers["X-Goog-Api-Key"] = self.api_client.api_key
 
         # If credentials exist, use them too (standard GCP behavior allows both)
         # But for Jules Alpha with API Key access, Key is primary.
