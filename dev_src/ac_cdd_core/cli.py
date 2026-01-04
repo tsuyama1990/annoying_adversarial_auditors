@@ -31,7 +31,7 @@ def check_environment() -> None:
 def init() -> None:
     """Initialize a new AC-CDD project."""
     check_environment()
-    ProjectManager().initialize_project(settings.paths.templates)
+    ProjectManager().initialize_project(str(settings.paths.templates))
 
     # Initialize empty project state if not exists
     mgr = SessionManager()
@@ -124,7 +124,7 @@ def list_actions() -> None:
             "uv run manage.py gen-cycles"
         )
         SuccessMessages.show_panel(msg, "Recommended Actions")
-    else:
+    elif manifest:
         # Check incomplete cycles
         next_cycle = next((c.id for c in manifest.cycles if c.status != "completed"), None)
         cycle_cmd = (
