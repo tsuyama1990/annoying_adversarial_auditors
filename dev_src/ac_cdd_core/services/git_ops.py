@@ -414,7 +414,9 @@ class GitManager:
 
         # 2. Try to fetch from origin
         logger.info(f"Checking remote for {self.STATE_BRANCH}...")
-        await self._run_git(["fetch", "origin", f"{self.STATE_BRANCH}:{self.STATE_BRANCH}"], check=False)
+        await self._run_git(
+            ["fetch", "origin", f"{self.STATE_BRANCH}:{self.STATE_BRANCH}"], check=False
+        )
 
         # Check again after fetch
         _, _, code = await self.runner.run_command(
@@ -469,9 +471,7 @@ class GitManager:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Create a worktree for the state branch
             try:
-                await self._run_git(
-                    ["worktree", "add", tmp_dir, self.STATE_BRANCH], check=True
-                )
+                await self._run_git(["worktree", "add", tmp_dir, self.STATE_BRANCH], check=True)
             except RuntimeError as e:
                 # Check if it's already checked out in another worktree
                 logger.warning(f"Could not add worktree (maybe locked?): {e}. Retrying with force.")
@@ -495,9 +495,7 @@ class GitManager:
                     [self.git_cmd, "-C", tmp_dir, "status", "--porcelain"], check=False
                 )
                 if status.strip():
-                    await self._run_git(
-                        ["-C", tmp_dir, "commit", "-m", message], check=True
-                    )
+                    await self._run_git(["-C", tmp_dir, "commit", "-m", message], check=True)
                     await self._run_git(
                         ["-C", tmp_dir, "push", "origin", self.STATE_BRANCH], check=False
                     )

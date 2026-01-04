@@ -5,7 +5,7 @@ from ac_cdd_core.domain_models import CycleManifest, ProjectManifest
 
 
 class TestProjectManifest:
-    def test_cycle_manifest_defaults(self):
+    def test_cycle_manifest_defaults(self) -> None:
         """Test CycleManifest default values."""
         cycle = CycleManifest(id="01")
         assert cycle.id == "01"
@@ -14,15 +14,15 @@ class TestProjectManifest:
         assert isinstance(cycle.created_at, datetime)
         assert isinstance(cycle.updated_at, datetime)
 
-    def test_project_manifest_serialization(self):
+    def test_project_manifest_serialization(self) -> None:
         """Test full ProjectManifest serialization loop."""
         manifest = ProjectManifest(
             project_session_id="test-session-123",
             integration_branch="dev/test/integration",
             cycles=[
                 CycleManifest(id="01", status="in_progress", jules_session_id="jules-1"),
-                CycleManifest(id="02", status="planned")
-            ]
+                CycleManifest(id="02", status="planned"),
+            ],
         )
 
         json_str = manifest.model_dump_json()
@@ -33,12 +33,12 @@ class TestProjectManifest:
         assert restored.cycles[0].jules_session_id == "jules-1"
         assert restored.cycles[1].status == "planned"
 
-    def test_manifest_validation(self):
+    def test_manifest_validation(self) -> None:
         """Test validation rules."""
         # Missing required fields
         with pytest.raises(ValueError, match="Field required"):
-            ProjectManifest(project_session_id="only-id") # type: ignore
+            ProjectManifest(project_session_id="only-id")
 
         # Invalid cycle status
         with pytest.raises(ValueError, match="Input should be"):
-            CycleManifest(id="01", status="invalid_status") # type: ignore
+            CycleManifest(id="01", status="invalid_status")

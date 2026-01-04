@@ -3,6 +3,19 @@ from typing import Any
 from ac_cdd_core.config import settings
 from ac_cdd_core.domain_models import PlanAuditResult
 from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+
+def _create_model(model_str: str) -> str | Any:
+    """Create appropriate model instance from model string."""
+    # If model string starts with "openrouter/", use OpenAIModel with OpenRouter provider
+    if model_str.startswith("openrouter/"):
+        # Extract the model name (remove "openrouter/" prefix)
+        model_name = model_str.replace("openrouter/", "", 1)
+        # Use OpenAIModel with openrouter provider
+        return OpenAIModel(model_name, provider="openrouter")
+    # Otherwise, return the model string as-is for pydantic-ai to infer
+    return model_str
 
 
 class PlanAuditor:
@@ -12,7 +25,7 @@ class PlanAuditor:
 
     def __init__(self, agent: Agent[Any, PlanAuditResult] | None = None) -> None:
         self.agent = agent or Agent(
-            model=settings.agents.auditor_model,
+            model=_create_model(settings.agents.auditor_model),
             output_type=PlanAuditResult,
             system_prompt=(
                 "You are an expert Software Architect and QA Auditor. "
@@ -42,11 +55,12 @@ class PlanAuditor:
 
         try:
             result = await self.agent.run(user_prompt)
-            # pydantic-ai v1.32.0+ uses .data for structured result
-            return result.data  # type: ignore
         except Exception as e:
             return PlanAuditResult(
                 status="REJECTED",
                 is_approved=False,
                 reason=f"Audit process failed: {e}",
             )
+        else:
+            # pydantic-ai v1.32.0+ uses .data for structured result
+            return result.data  # type: ignore

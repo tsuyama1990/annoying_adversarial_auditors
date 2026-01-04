@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from ac_cdd_core.domain_models import CycleManifest, ProjectManifest
@@ -7,19 +7,20 @@ from ac_cdd_core.session_manager import SessionManager
 
 @pytest.mark.asyncio
 class TestSessionResume:
-
     @pytest.fixture
-    def manager(self):
+    def manager(self) -> SessionManager:
         return SessionManager()
 
     @patch("ac_cdd_core.session_manager.SessionManager.load_manifest")
     @patch("ac_cdd_core.session_manager.SessionManager.save_manifest")
-    async def test_update_session_active_cycle(self, mock_save, mock_load, manager):
+    async def test_update_session_active_cycle(
+        self, mock_save: AsyncMock, mock_load: AsyncMock, manager: SessionManager
+    ) -> None:
         # Setup existing manifest
         manifest = ProjectManifest(
             project_session_id="p1",
             integration_branch="dev/p1",
-            cycles=[CycleManifest(id="01", status="planned")]
+            cycles=[CycleManifest(id="01", status="planned")],
         )
         mock_load.return_value = manifest
 
@@ -30,13 +31,15 @@ class TestSessionResume:
         mock_save.assert_awaited_once()
 
     @patch("ac_cdd_core.session_manager.SessionManager.load_manifest")
-    async def test_resume_jules_session_no_id_found(self, mock_load, manager):
+    async def test_resume_jules_session_no_id_found(
+        self, mock_load: AsyncMock, manager: SessionManager
+    ) -> None:
         """Test that resume raises error if no ID is found anywhere."""
         # Manifest exists but no Jules session ID
         manifest = ProjectManifest(
             project_session_id="p1",
             integration_branch="dev/p1",
-            cycles=[CycleManifest(id="01", status="planned", jules_session_id=None)]
+            cycles=[CycleManifest(id="01", status="planned", jules_session_id=None)],
         )
         mock_load.return_value = manifest
 
@@ -52,11 +55,13 @@ class TestSessionResume:
         # Since I refactored SessionManager, I just verify get_cycle works.
 
     @patch("ac_cdd_core.session_manager.SessionManager.load_manifest")
-    async def test_resume_jules_session_auto_load(self, mock_load, manager):
+    async def test_resume_jules_session_auto_load(
+        self, mock_load: AsyncMock, manager: SessionManager
+    ) -> None:
         manifest = ProjectManifest(
             project_session_id="p1",
             integration_branch="dev/p1",
-            cycles=[CycleManifest(id="01", status="in_progress", jules_session_id="jules-123")]
+            cycles=[CycleManifest(id="01", status="in_progress", jules_session_id="jules-123")],
         )
         mock_load.return_value = manifest
 

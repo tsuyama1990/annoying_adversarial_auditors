@@ -128,18 +128,21 @@ This creates a **development session** with:
 ### 3. Run Development Cycles
 
 ```bash
-# Run individual cycles (session auto-loaded)
+# Run individual cycles (automated auditing enabled by default)
 uv run manage.py run-cycle --id 01
 uv run manage.py run-cycle --id 02
 
 # Or run all cycles sequentially
-uv run manage.py run-cycle --id all --auto
+uv run manage.py run-cycle --id all
+
+# Disable automated auditing (not recommended)
+uv run manage.py run-cycle --id 01 --no-auto
 ```
 
 Each cycle:
 - Creates branch: `dev/session-{timestamp}/cycle{id}`
 - Implements features via Jules
-- Runs **6 audit-fix cycles** (3 auditors × 2 reviews each)
+- Runs **Committee of Auditors** automatically (3 auditors × 2 reviews each)
 - Auto-merges to **integration branch** (not main)
 
 ### 4. Finalize Session

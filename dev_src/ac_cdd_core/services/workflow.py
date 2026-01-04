@@ -4,7 +4,6 @@ import sys
 from ac_cdd_core.config import settings
 from ac_cdd_core.domain_models import CycleManifest
 from ac_cdd_core.graph import GraphBuilder
-from ac_cdd_core.interfaces import IWorkflowOrchestrator
 from ac_cdd_core.messages import SuccessMessages, ensure_api_key
 from ac_cdd_core.service_container import ServiceContainer
 from ac_cdd_core.services.audit_orchestrator import AuditOrchestrator
@@ -20,7 +19,7 @@ from rich.panel import Panel
 console = Console()
 
 
-class WorkflowService(IWorkflowOrchestrator):
+class WorkflowService:
     def __init__(self) -> None:
         self.services = ServiceContainer.default()
         self.builder = GraphBuilder(self.services)

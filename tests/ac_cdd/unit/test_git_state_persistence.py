@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from ac_cdd_core.services.git_ops import GitManager
@@ -6,13 +6,14 @@ from ac_cdd_core.services.git_ops import GitManager
 
 @pytest.mark.asyncio
 class TestGitStatePersistence:
-
     @pytest.fixture
-    def git_manager(self):
+    def git_manager(self) -> GitManager:
         return GitManager()
 
     @patch("ac_cdd_core.process_runner.ProcessRunner.run_command")
-    async def test_ensure_state_branch_exists(self, mock_run, git_manager):
+    async def test_ensure_state_branch_exists(
+        self, mock_run: AsyncMock, git_manager: GitManager
+    ) -> None:
         # Setup: branch exists (rev-parse returns 0)
         mock_run.return_value = ("", "", 0)
 
@@ -20,11 +21,13 @@ class TestGitStatePersistence:
 
         # Verify check called but no creation commands
         assert mock_run.call_count >= 1
-        args, _ = mock_run.call_args_list[0] # First call should be rev-parse or fetch
+        args, _ = mock_run.call_args_list[0]  # First call should be rev-parse or fetch
         # Given the updated logic might fetch first, we check that rev-parse eventually succeeds
 
     @patch("ac_cdd_core.process_runner.ProcessRunner.run_command")
-    async def test_ensure_state_branch_creates_if_missing(self, mock_run, git_manager):
+    async def test_ensure_state_branch_creates_if_missing(
+        self, mock_run: AsyncMock, git_manager: GitManager
+    ) -> None:
         # Mock sequence:
         # 1. rev-parse local (fail)
         # 2. fetch origin (fail or succeed, doesn't matter if local missing)
@@ -41,12 +44,12 @@ class TestGitStatePersistence:
         # create orphan
 
         mock_run.side_effect = [
-            ("", "", 128), # rev-parse local
-            ("", "", 128), # fetch origin (optional/can fail)
-            ("", "", 128), # rev-parse local
-            ("tree_hash\n", "", 0), # mktree
-            ("commit_hash\n", "", 0), # commit-tree
-            ("", "", 0) # update-ref
+            ("", "", 128),  # rev-parse local
+            ("", "", 128),  # fetch origin (optional/can fail)
+            ("", "", 128),  # rev-parse local
+            ("tree_hash\n", "", 0),  # mktree
+            ("commit_hash\n", "", 0),  # commit-tree
+            ("", "", 0),  # update-ref
         ]
 
         await git_manager.ensure_state_branch()
@@ -58,7 +61,7 @@ class TestGitStatePersistence:
         assert any("update-ref" in cmd for cmd in cmd_args)
 
     @patch("ac_cdd_core.process_runner.ProcessRunner.run_command")
-    async def test_read_state_file(self, mock_run, git_manager):
+    async def test_read_state_file(self, mock_run: AsyncMock, git_manager: GitManager) -> None:
         expected_content = '{"key": "value"}'
         mock_run.return_value = (expected_content, "", 0)
 
@@ -71,10 +74,16 @@ class TestGitStatePersistence:
 
     @patch("ac_cdd_core.services.git_ops.tempfile.TemporaryDirectory")
     @patch("ac_cdd_core.process_runner.ProcessRunner.run_command")
-    @patch("pathlib.Path.write_text") # Mock writing file
-    async def test_save_state_file(self, mock_write, mock_run, mock_temp, git_manager):
+    @patch("pathlib.Path.write_text")  # Mock writing file
+    async def test_save_state_file(
+        self,
+        mock_write: MagicMock,
+        mock_run: AsyncMock,
+        mock_temp: MagicMock,
+        git_manager: GitManager,
+    ) -> None:
         # Setup mocks
-        mock_temp.return_value.__enter__.return_value = "/tmp/dir" # noqa: S108
+        mock_temp.return_value.__enter__.return_value = "/tmp/dir"  # noqa: S108
 
         # Sequence of calls:
         # ensure_state_branch calls rev-parse -> success
@@ -84,13 +93,13 @@ class TestGitStatePersistence:
 
         # We need to feed enough mock returns
         mock_run.side_effect = [
-            ("", "", 0), # ensure_state_branch -> rev-parse (local exists)
-            ("", "", 0), # worktree add
-            ("", "", 0), # git add
-            ("M test.json", "", 0), # git status (changed)
-            ("", "", 0), # git commit
-            ("", "", 0), # git push
-            ("", "", 0), # worktree remove
+            ("", "", 0),  # ensure_state_branch -> rev-parse (local exists)
+            ("", "", 0),  # worktree add
+            ("", "", 0),  # git add
+            ("M test.json", "", 0),  # git status (changed)
+            ("", "", 0),  # git commit
+            ("", "", 0),  # git push
+            ("", "", 0),  # worktree remove
         ]
 
         await git_manager.save_state_file("test.json", "content", "msg")

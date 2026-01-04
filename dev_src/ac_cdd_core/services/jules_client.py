@@ -474,6 +474,97 @@ class JulesClient:
         except Exception as e:
             logger.warning(f"Failed to fetch initial activities: {e}")
 
+    def _load_cycle_docs(self, current_cycle: str, context_parts: list[str]) -> None:
+        """Load SPEC.md and UAT.md for the current cycle."""
+        spec_path = Path(f"dev_documents/system_prompts/CYCLE{current_cycle}/SPEC.md")
+        if spec_path.exists():
+            spec_content = spec_path.read_text(encoding="utf-8")
+            context_parts.append(f"\n## Cycle Specification\n```markdown\n{spec_content}\n```\n")
+
+        uat_path = Path(f"dev_documents/system_prompts/CYCLE{current_cycle}/UAT.md")
+        if uat_path.exists():
+            uat_content = uat_path.read_text(encoding="utf-8")
+            context_parts.append(f"\n## User Acceptance Tests\n```markdown\n{uat_content}\n```\n")
+
+    async def _load_changed_files(self, context_parts: list[str]) -> None:
+        """Load content of changed files in the current branch."""
+        changed_files = await self.git.get_changed_files()
+        if not changed_files:
+            return
+
+        context_parts.append(f"\n## Changed Files ({len(changed_files)} files)\n")
+
+        max_files = 10  # Prevent context overflow
+        max_file_size = 5000  # chars per file
+
+        for filepath in changed_files[:max_files]:
+            try:
+                file_path = Path(filepath)
+                if file_path.exists() and file_path.suffix in [
+                    ".py",
+                    ".md",
+                    ".toml",
+                    ".json",
+                    ".yaml",
+                    ".yml",
+                ]:
+                    content = file_path.read_text(encoding="utf-8")
+                    if len(content) > max_file_size:
+                        content = content[:max_file_size] + "\n... (truncated)"
+                    context_parts.append(
+                        f"\n### {filepath}\n```{file_path.suffix[1:]}\n{content}\n```\n"
+                    )
+            except Exception as e:
+                logger.debug(f"Could not read {filepath}: {e}")
+                continue
+
+    def _load_architecture_summary(self, context_parts: list[str]) -> None:
+        """Load system architecture summary."""
+        arch_path = Path("dev_documents/system_prompts/SYSTEM_ARCHITECTURE.md")
+        if not arch_path.exists():
+            return
+
+        arch_content = arch_path.read_text(encoding="utf-8")
+        summary_end = arch_content.find("\n## ")
+        if summary_end > 0:
+            arch_summary = arch_content[:summary_end]
+            context_parts.append(
+                f"\n## System Architecture (Summary)\n```markdown\n{arch_summary}\n```\n"
+            )
+
+    async def _build_question_context(self, question: str) -> str:
+        """
+        Builds comprehensive context for answering Jules' questions.
+        Includes: current cycle SPEC, changed files, and their contents.
+        """
+        context_parts = [f"# Jules' Question\n{question}\n"]
+
+        try:
+            session_data = SessionManager.load_session()
+            current_cycle = session_data.get("current_cycle")
+
+            if current_cycle:
+                context_parts.append(f"\n# Current Cycle: {current_cycle}\n")
+                self._load_cycle_docs(current_cycle, context_parts)
+
+            await self._load_changed_files(context_parts)
+            self._load_architecture_summary(context_parts)
+
+        except Exception as e:
+            logger.warning(f"Failed to build full context for Jules question: {e}")
+            return question
+
+        full_context = "\n".join(context_parts)
+        full_context += (
+            "\n\n---\n"
+            "**Instructions**: Based on the above context (current cycle spec, changed files, and architecture), "
+            "provide a detailed, actionable answer to Jules' question. "
+            "Reference specific files, functions, or design decisions when relevant. "
+            "If the question relates to implementation details, cite the SPEC.md requirements."
+        )
+
+        return full_context
+
     async def _process_inquiries(
         self, client: httpx.AsyncClient, session_url: str, state: str, processed_ids: set[str]
     ) -> None:
@@ -496,18 +587,32 @@ class JulesClient:
             self.console.print(
                 f"\n[bold magenta]Jules Question Detected:[/bold magenta] {question}"
             )
-            self.console.print("[dim]Consulting Manager Agent...[/dim]")
+            self.console.print("[dim]Consulting Manager Agent with full context...[/dim]")
 
             try:
-                mgr_response = await self.manager_agent.run(question)
+                # Build comprehensive context including current cycle SPEC and changed files
+                enhanced_context = await self._build_question_context(question)
+
+                self.console.print(f"[dim]Context size: {len(enhanced_context)} chars[/dim]")
+
+                mgr_response = await self.manager_agent.run(enhanced_context)
                 reply_text = mgr_response.output
                 reply_text += "\n\n(System Note: If task complete/blocker resolved, proceed to create PR. Do not wait.)"
+
                 self.console.print(f"[bold cyan]Manager Agent Reply:[/bold cyan] {reply_text}")
                 await self._send_message(session_url, reply_text)
                 processed_ids.add(act_id)
                 await self._sleep(5)
             except Exception as e:
                 logger.error(f"Manager Agent failed: {e}")
+                # Fallback: send a basic response
+                fallback_msg = (
+                    f"I encountered an error processing your question. "
+                    f"Please refer to the SPEC.md in dev_documents/system_prompts/ for guidance. "
+                    f"Original question: {question}"
+                )
+                await self._send_message(session_url, fallback_msg)
+                processed_ids.add(act_id)
 
     def _check_success_state(self, data: dict[str, Any], state: str) -> dict[str, Any] | None:
         if state not in ["SUCCEEDED", "COMPLETED"]:

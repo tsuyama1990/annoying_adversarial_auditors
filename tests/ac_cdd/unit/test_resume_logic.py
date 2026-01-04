@@ -7,9 +7,8 @@ from ac_cdd_core.graph_nodes import CycleNodes
 
 @pytest.mark.asyncio
 class TestResumeLogic:
-
     @pytest.fixture
-    def mock_dependencies(self):
+    def mock_dependencies(self) -> tuple[MagicMock, MagicMock]:
         sandbox = MagicMock()
         jules = MagicMock()
         jules.wait_for_completion = AsyncMock()
@@ -17,7 +16,9 @@ class TestResumeLogic:
         return sandbox, jules
 
     @patch("ac_cdd_core.graph_nodes.SessionManager")
-    async def test_hot_resume_active(self, mock_sm_cls, mock_dependencies):
+    async def test_hot_resume_active(
+        self, mock_sm_cls: MagicMock, mock_dependencies: tuple[MagicMock, MagicMock]
+    ) -> None:
         """Test that coder_session_node resumes if session ID exists in manifest."""
         sandbox, jules = mock_dependencies
         nodes = CycleNodes(sandbox, jules)
@@ -37,12 +38,14 @@ class TestResumeLogic:
 
         # Assertions
         jules.wait_for_completion.assert_awaited_once_with("jules-existing-123")
-        jules.run_session.assert_not_awaited() # Should NOT start new session
+        jules.run_session.assert_not_awaited()  # Should NOT start new session
         assert result["status"] == "ready_for_audit"
         assert result["pr_url"] == "http://pr"
 
     @patch("ac_cdd_core.graph_nodes.SessionManager")
-    async def test_fallback_to_new_session_and_persist(self, mock_sm_cls, mock_dependencies):
+    async def test_fallback_to_new_session_and_persist(
+        self, mock_sm_cls: MagicMock, mock_dependencies: tuple[MagicMock, MagicMock]
+    ) -> None:
         """Test that if no session exists, a new one is started and immediately persisted."""
         sandbox, jules = mock_dependencies
         nodes = CycleNodes(sandbox, jules)
@@ -57,7 +60,7 @@ class TestResumeLogic:
         jules.run_session.return_value = {
             "session_name": "jules-new-456",
             "status": "success",
-            "pr_url": "http://pr-new"
+            "pr_url": "http://pr-new",
         }
 
         state = {"cycle_id": "01", "iteration_count": 1, "resume_mode": True}
@@ -67,13 +70,11 @@ class TestResumeLogic:
 
         # Assertions
         jules.run_session.assert_awaited_once()
-        assert jules.run_session.await_args.kwargs['require_plan_approval'] is True
+        assert jules.run_session.await_args.kwargs["require_plan_approval"] is True
 
         # Verify Immediate Persistence
         mock_mgr.update_cycle_state.assert_awaited_with(
-            "01",
-            jules_session_id="jules-new-456",
-            status="in_progress"
+            "01", jules_session_id="jules-new-456", status="in_progress"
         )
 
         assert result["status"] == "ready_for_audit"

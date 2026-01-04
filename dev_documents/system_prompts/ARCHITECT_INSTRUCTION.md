@@ -20,6 +20,7 @@ You must generate (create) the following files in the repository:
 - `dev_documents/system_prompts/CYCLE{xx}/SPEC.md` (For EACH Cycle)
 - `dev_documents/system_prompts/CYCLE{xx}/UAT.md` (For EACH Cycle)
 - `dev_documents/system_prompts/plan_status.json`
+- `pyproject.toml`
 
 ### File Content Requirements
 
@@ -90,7 +91,109 @@ User Acceptance Testing plan.
 2. **Behavior Definitions** (Min 500 words)
    - Gherkin-style (GIVEN/WHEN/THEN) definitions.
 
-#### 4. `dev_documents/system_prompts/plan_status.json`
+#### 4. `pyproject.toml` - Linter Configuration
+
+**IMPORTANT:** This project enforces strict code quality standards using `ruff` and `mypy` in strict mode.
+
+**Modification Rules:**
+- **DO NOT MODIFY** any existing sections in `pyproject.toml`
+- **ONLY OVERRIDE** the linter tool settings shown below if needed for project-specific requirements
+- The default configuration is optimized for AI-generated code quality
+
+**Default Linter Configuration:**
+
+```toml
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+fix = true
+
+[tool.ruff.lint]
+# E/F/I: Basic, B: Bugbear, S: Bandit, UP: pyupgrade
+select = [
+    "F",    # Pyflakes (basic errors)
+    "E", "W", # pycodestyle (style)
+    "C90",  # mccabe (complexity check: prevent AI spaghetti code)
+    "I",    # isort (import organization)
+    "N",    # pep8-naming (naming conventions: proper class/function names)
+    "UP",   # pyupgrade (modern syntax)
+    "YTT",  # flake8-2020 (prevent sys.version misuse)
+    "ANN",  # flake8-annotations (enforce type hints: critical)
+    "ASYNC",# flake8-async (prevent async bugs)
+    "S",    # flake8-bandit (security)
+    "BLE",  # flake8-blind-except (prohibit catching all errors)
+    "B",    # flake8-bugbear (detect bug hotspots)
+    "A",    # flake8-builtins (prevent overwriting built-in names: id, list, etc.)
+    "C4",   # flake8-comprehensions (optimize list comprehensions)
+    "DTZ",  # flake8-datetimez (enforce timezone)
+    "T10",  # flake8-debugger (prevent forgotten debugger statements)
+    "EM",   # flake8-errmsg (improve exception message quality)
+    "ICN",  # flake8-import-conventions (standardize import aliases: pd, np, etc.)
+    "PIE",  # flake8-pie (miscellaneous code improvements)
+    "T20",  # flake8-print (prohibit print statements: enforce logger usage)
+    "PT",   # flake8-pytest-style (improve test code quality)
+    "RET",  # flake8-return (return statement consistency)
+    "SIM",  # flake8-simplify (concise writing)
+    "TID",  # flake8-tidy-imports (organize imports)
+    "ARG",  # flake8-unused-arguments (remove unused arguments)
+    "PTH",  # flake8-use-pathlib (prohibit os.path -> enforce pathlib)
+    "ERA",  # eradicate (remove commented code: clean up AI trial-and-error traces)
+    "PL",   # Pylint (comprehensive code quality checks)
+    "TRY",  # tryceratops (proper exception handling)
+    "RUF",  # Ruff-specific rules
+]
+
+ignore = [
+    "ANN101", # Type hint for self is unnecessary (deprecated)
+    "ANN002", # Type hint for *args can be omitted
+    "ANN003", # Type hint for **kwargs can be omitted
+    "ANN001", # Missing type annotation for function arguments
+    "ANN401", # Dynamically typed expressions are disallowed
+    "ARG001", # Unused function argument
+    "ARG005", # Unused lambda argument
+    "PLR2004", # Magic value used in comparison
+    "E501",   # Line length limit (auto-fix may not work, slows development)
+    "TRY003", # Exception message too long warning (too strict for AI)
+    "D",      # docstring (excluded to focus on code behavior risks. Add if needed)
+    "ANN201", # Missing return type annotation for public functions
+    "N806",   # Variable should be lowercase
+    "PLC0415", # Import should be at top-level
+    "BLE001", # Blind exception catch
+    "PT019",  # Fixture without value injection
+    "RUF003", # Ambiguous multiplication sign
+    "ARG002", # Unused method argument
+    "RUF043", # Pattern metacharacters not escaped in match
+    "RUF059", # Unused unpacked variable
+    "PLR0913", # Too many arguments in function definition
+    "ANN202"  # Missing return type annotation for private functions
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]  # Allow assert in tests
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10  # Exceeding this prompts function splitting (prevent AI long functions)
+
+[tool.ruff.lint.flake8-annotations]
+suppress-dummy-args = true  # Arguments starting with _ do not require type hints
+
+[tool.pytest.ini_options]
+addopts = "--cov=dev_src --cov=src --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+```
+
+**Why These Settings Matter:**
+- **Type Safety**: Strict mypy + ANN rules catch type errors before runtime
+- **Complexity Control**: Max complexity of 10 prevents unmaintainable AI-generated functions
+- **Security**: Bandit rules prevent common security vulnerabilities
+- **Maintainability**: Enforces modern Python patterns and clean code practices
+
+
+#### 5. `dev_documents/system_prompts/plan_status.json`
 Content format:
 ```json
 {
@@ -101,6 +204,4 @@ Content format:
 **CRITICAL:** You MUST generate EXACTLY `{{max_cycles}}` cycles. Do not decide on your own to generate fewer. If the input says 8 cycles, you must create CYCLE01 through CYCLE08.
 
 FINAL REMINDER
-
-ACT, DO NOT JUST TALK: Create the files.
 DO NOT MODIFY ANY FILES except the documentation files listed above.

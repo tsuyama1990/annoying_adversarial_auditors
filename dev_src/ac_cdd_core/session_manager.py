@@ -37,7 +37,9 @@ class SessionManager:
             logger.error(f"Failed to load project manifest: {e}")
             return None
 
-    async def save_manifest(self, manifest: ProjectManifest, commit_msg: str = "Update state") -> None:
+    async def save_manifest(
+        self, manifest: ProjectManifest, commit_msg: str = "Update state"
+    ) -> None:
         """Saves manifest to the orphan state branch."""
         try:
             manifest.last_updated = datetime.now(UTC)
@@ -47,7 +49,9 @@ class SessionManager:
             logger.exception(f"Failed to save manifest: {e}")
             raise
 
-    async def create_manifest(self, project_session_id: str, integration_branch: str) -> ProjectManifest:
+    async def create_manifest(
+        self, project_session_id: str, integration_branch: str
+    ) -> ProjectManifest:
         """Creates and saves a new project manifest."""
         manifest = ProjectManifest(
             project_session_id=project_session_id, integration_branch=integration_branch

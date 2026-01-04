@@ -171,21 +171,54 @@ class CycleNodes(IGraphNodes):
             return {"status": "failed", "error": str(e)}
         else:
             if result.get("status") == "failed":
-                 return {"status": "failed", "error": result.get("error")}
+                return {"status": "failed", "error": result.get("error")}
             # If successful but no PR (unexpected)
             return {"status": "failed", "error": "Jules failed to produce PR"}
 
-    async def auditor_node(self, _state: CycleState) -> dict[str, Any]:
+    async def auditor_node(self, state: CycleState) -> dict[str, Any]:
         """Node for Auditor Agent (Aider/LLM)."""
         console.print("[bold magenta]Starting Auditor...[/bold magenta]")
 
         instruction = settings.get_template("AUDITOR_INSTRUCTION.md").read_text()
 
-        target_paths = settings.get_target_files()
+        # Get context files (SPEC, UAT, etc.) - these are static references
         context_paths = settings.get_context_files()
-
-        target_files = await self._read_files(target_paths)
         context_docs = await self._read_files(context_paths)
+
+        # DYNAMIC: Get all files changed in the current branch (what's in the PR)
+        from .services.git_ops import GitManager
+
+        git = GitManager()
+
+        try:
+            changed_file_paths = await git.get_changed_files()
+            console.print(
+                f"[dim]Auditor: Found {len(changed_file_paths)} changed files to review[/dim]"
+            )
+
+            # Filter to only code/config files (skip binary, images, etc.)
+            reviewable_extensions = {".py", ".md", ".toml", ".json", ".yaml", ".yml", ".txt", ".sh"}
+            reviewable_files = [
+                f for f in changed_file_paths if Path(f).suffix in reviewable_extensions
+            ]
+
+            if not reviewable_files:
+                console.print(
+                    "[yellow]Warning: No reviewable files found in changes. Using fallback.[/yellow]"
+                )
+                # Fallback to static configuration
+                reviewable_files = settings.get_target_files()
+            else:
+                console.print(f"[dim]Auditor: Reviewing {len(reviewable_files)} code files[/dim]")
+
+            target_files = await self._read_files(reviewable_files)
+
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not get changed files from git: {e}[/yellow]")
+            console.print("[dim]Falling back to static target files configuration[/dim]")
+            # Fallback to original behavior
+            target_paths = settings.get_target_files()
+            target_files = await self._read_files(target_paths)
 
         model = settings.reviewer.fast_model
 

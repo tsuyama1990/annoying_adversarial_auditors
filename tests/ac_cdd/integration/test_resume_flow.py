@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -6,15 +7,17 @@ from ac_cdd_core.graph_nodes import CycleNodes
 
 
 @pytest.fixture
-def cycle_nodes():
+def cycle_nodes() -> CycleNodes:
     return CycleNodes(MagicMock(), MagicMock())
 
+
 @pytest.fixture
-def mock_jules_client(cycle_nodes):
+def mock_jules_client(cycle_nodes: CycleNodes) -> Any:
     return cycle_nodes.jules
 
+
 @pytest.mark.asyncio
-async def test_resume_logic_hot_resume(cycle_nodes, mock_jules_client):
+async def test_resume_logic_hot_resume(cycle_nodes: CycleNodes, mock_jules_client: Any) -> None:
     """Test hot resume functionality."""
     # Mock SessionManager
     with patch("ac_cdd_core.graph_nodes.SessionManager") as mock_sm_cls:
@@ -25,7 +28,9 @@ async def test_resume_logic_hot_resume(cycle_nodes, mock_jules_client):
         mock_mgr.get_cycle = AsyncMock(return_value=cycle)
 
         # Mock Jules Client
-        mock_jules_client.wait_for_completion = AsyncMock(return_value={"status": "success", "pr_url": "http://pr"})
+        mock_jules_client.wait_for_completion = AsyncMock(
+            return_value={"status": "success", "pr_url": "http://pr"}
+        )
 
         state = {"cycle_id": "01", "iteration_count": 1, "resume_mode": True}
         result = await cycle_nodes.coder_session_node(state)
@@ -34,8 +39,11 @@ async def test_resume_logic_hot_resume(cycle_nodes, mock_jules_client):
         mock_jules_client.wait_for_completion.assert_awaited_with("existing-session")
         assert result["status"] == "ready_for_audit"
 
+
 @pytest.mark.asyncio
-async def test_resume_logic_cold_start_persists_id(cycle_nodes, mock_jules_client):
+async def test_resume_logic_cold_start_persists_id(
+    cycle_nodes: CycleNodes, mock_jules_client: Any
+) -> None:
     """Test cold start (no previous ID) persists new ID."""
     # Mock SessionManager
     with patch("ac_cdd_core.graph_nodes.SessionManager") as mock_sm_cls:
@@ -47,9 +55,9 @@ async def test_resume_logic_cold_start_persists_id(cycle_nodes, mock_jules_clien
         mock_mgr.update_cycle_state = AsyncMock()
 
         # Mock Jules Client
-        mock_jules_client.run_session = AsyncMock(return_value={
-            "session_name": "new-session", "status": "success", "pr_url": "http://pr"
-        })
+        mock_jules_client.run_session = AsyncMock(
+            return_value={"session_name": "new-session", "status": "success", "pr_url": "http://pr"}
+        )
 
         state = {"cycle_id": "01", "iteration_count": 1, "resume_mode": True}
         await cycle_nodes.coder_session_node(state)

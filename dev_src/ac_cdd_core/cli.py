@@ -13,7 +13,19 @@ from rich.console import Console
 
 app = typer.Typer(help="AC-CDD: AI-Native Cycle-Based Contract-Driven Development Environment")
 console = Console()
-workflow_service = WorkflowService()
+
+
+class _WorkflowServiceHolder:
+    """Holder for lazy-initialized workflow service."""
+
+    _instance: WorkflowService | None = None
+
+    @classmethod
+    def get(cls) -> WorkflowService:
+        """Get or create the workflow service instance."""
+        if cls._instance is None:
+            cls._instance = WorkflowService()
+        return cls._instance
 
 
 def check_environment() -> None:
@@ -46,8 +58,8 @@ def init() -> None:
                 if gitignore_path.exists():
                     content = gitignore_path.read_text(encoding="utf-8")
                     if "dev_documents/project_state.json" not in content:
-                         with gitignore_path.open("a", encoding="utf-8") as f:
-                             f.write("\n# AC-CDD State\ndev_documents/project_state.json\n")
+                        with gitignore_path.open("a", encoding="utf-8") as f:
+                            f.write("\n# AC-CDD State\ndev_documents/project_state.json\n")
                 else:
                     gitignore_path.write_text("# AC-CDD State\ndev_documents/project_state.json\n")
 
@@ -69,22 +81,31 @@ def gen_cycles(
     """
     Architect Phase: Generate cycle specs based on requirements.
     """
-    asyncio.run(workflow_service.run_gen_cycles(cycles, project_session_id))
+    asyncio.run(_WorkflowServiceHolder.get().run_gen_cycles(cycles, project_session_id))
 
 
 @app.command()
 def run_cycle(
     cycle_id: Annotated[str, typer.Option("--id", help="Cycle ID (e.g., 01, 02)")] = "01",
     resume: Annotated[bool, typer.Option("--resume", help="Resume an existing session")] = False,
-    auto: Annotated[bool, typer.Option("--auto", help="Auto-approve steps (Headless)")] = False,
+    auto: Annotated[
+        bool,
+        typer.Option(
+            "--auto/--no-auto",
+            help="Auto-approve steps and run auditors automatically (default: enabled)",
+        ),
+    ] = True,  # Changed default to True - automated auditing is the core feature
     start_iter: Annotated[int, typer.Option("--start-iter", help="Initial iteration count")] = 1,
     project_session_id: Annotated[str | None, typer.Option("--session", help="Session ID")] = None,
 ) -> None:
     """
     Coder Phase: Implement a specific development cycle.
+
+    By default, runs with automated code review (Committee of Auditors).
+    Use --no-auto to disable automated auditing (not recommended).
     """
     asyncio.run(
-        workflow_service.run_cycle(
+        _WorkflowServiceHolder.get().run_cycle(
             cycle_id=cycle_id,
             resume=resume,
             auto=auto,
@@ -105,7 +126,7 @@ def start_session(
     """
     Convenience command to start an end-to-end session with planning and optional auditing.
     """
-    asyncio.run(workflow_service.start_session(prompt, audit_mode, max_retries))
+    asyncio.run(_WorkflowServiceHolder.get().start_session(prompt, audit_mode, max_retries))
 
 
 @app.command()
@@ -115,12 +136,13 @@ def finalize_session(
     """
     Finalize a development session by creating a PR to main.
     """
-    asyncio.run(workflow_service.finalize_session(project_session_id))
+    asyncio.run(_WorkflowServiceHolder.get().finalize_session(project_session_id))
 
 
 @app.command()
 def list_actions() -> None:
     """List recommended next actions."""
+
     async def _list() -> None:
         mgr = SessionManager()
         manifest = await mgr.load_manifest()
@@ -144,7 +166,9 @@ def list_actions() -> None:
                 else "uv run manage.py finalize-session"
             )
 
-            msg = f"Active Session: {sid}\n\nNext steps:\n1. Continue development:\n   {cycle_cmd}\n"
+            msg = (
+                f"Active Session: {sid}\n\nNext steps:\n1. Continue development:\n   {cycle_cmd}\n"
+            )
             SuccessMessages.show_panel(msg, "Recommended Actions")
 
     asyncio.run(_list())

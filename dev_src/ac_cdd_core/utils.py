@@ -10,7 +10,7 @@ from rich.logging import RichHandler
 
 console = Console()
 
-# ロガー設定
+# Logger configuration
 logging.basicConfig(
     level="INFO",
     format="%(message)s",
@@ -25,8 +25,8 @@ def run_command(
     command: list[str], cwd: str | None = None, env: dict[str, str] | None = None
 ) -> None:
     """
-    コマンドを実行し、出力をリアルタイムで表示する。
-    エラー時は CalledProcessError を送出する。
+    Execute a command and display output in real-time.
+    Raises CalledProcessError on error.
     """
     cmd_str = " ".join(command)
     logger.info(f"Running: {cmd_str}")
@@ -44,7 +44,7 @@ def run_command(
 
         if process.stdout:
             for _line in process.stdout:
-                pass  # RichHandler経由でなく直接出力して生ログを見せる
+                pass  # Direct output instead of via RichHandler to show raw logs
 
         process.wait()
 

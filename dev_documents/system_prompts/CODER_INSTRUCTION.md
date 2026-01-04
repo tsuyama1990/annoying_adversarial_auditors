@@ -9,8 +9,7 @@ Your goal is to implement and **VERIFY** the features for **CYCLE {{cycle_id}}**
     - **Write Tests Second**: Write tests based on the defined schemas (TDD).
     - **Implement Logic Last**: Implement the functions to satisfy the tests.
 2.  **PROOF OF WORK**: The remote CI system will NOT run heavy tests. **YOU are responsible for running tests in your local environment.**
-3.  **CHECK RUFF & REFACTOR CODES BEFORE PR**: You MUST refactor codes, and run `uv run ruff check --fix .` and `uv run ruff format .` before PR.
-4.  **MANDATORY LOGGING**: You MUST submit the raw output of your test execution to verify your work.
+3.  **CHECK RUFF & REFACTOR CODES BEFORE PR**: You MUST refactor codes, and run `uv run ruff check .`, `uv run ruff format .` and `uv run mypy .` before PR.
 
 ## Inputs
 - `dev_documents/system_prompts/SYSTEM_ARCHITECTURE.md`

@@ -157,18 +157,21 @@ This acts as the **Architect**:
 ### 3. Run Development Cycles
 
 ```bash
-# Run individual cycles (session auto-loaded)
+# Run individual cycles (automated auditing enabled by default)
 ac-cdd run-cycle --id 01
 ac-cdd run-cycle --id 02
 
 # Or run all cycles sequentially
-ac-cdd run-cycle --id all --auto
+ac-cdd run-cycle --id all
+
+# Disable automated auditing (not recommended)
+ac-cdd run-cycle --id 01 --no-auto
 ```
 
 Each cycle:
 - Creates branch: `dev/session-{timestamp}/cycle{id}`
 - Implements features via Jules
-- Runs **Committee of Auditors** (sequential strict reviews)
+- Runs **Committee of Auditors** automatically (3 auditors × 2 reviews each)
 - Auto-merges to **integration branch** (not main)
 
 ### 4. Finalize Session

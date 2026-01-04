@@ -47,10 +47,16 @@ class SessionValidator(BaseValidator):
             return False, "Project manifest not found."
 
         if manifest.project_session_id != self.session_id:
-            return False, f"Manifest session ID {manifest.project_session_id} does not match requested {self.session_id}"
+            return (
+                False,
+                f"Manifest session ID {manifest.project_session_id} does not match requested {self.session_id}",
+            )
 
         if manifest.integration_branch != self.integration_branch:
-             return False, f"Manifest integration branch {manifest.integration_branch} does not match {self.integration_branch}"
+            return (
+                False,
+                f"Manifest integration branch {manifest.integration_branch} does not match {self.integration_branch}",
+            )
 
         # 2. Remote branch check (optional)
         if self.check_remote:
