@@ -6,6 +6,7 @@ from rich.console import Console
 
 from .config import settings
 from .domain_models import AuditResult
+from .interfaces import IGraphNodes
 from .sandbox import SandboxRunner
 from .services.audit_orchestrator import AuditOrchestrator
 from .services.jules_client import JulesClient
@@ -15,7 +16,7 @@ from .state import CycleState
 console = Console()
 
 
-class CycleNodes:
+class CycleNodes(IGraphNodes):
     """
     Encapsulates the logic for each node in the AC-CDD workflow graph.
     """
@@ -23,6 +24,8 @@ class CycleNodes:
     def __init__(self, sandbox_runner: SandboxRunner, jules_client: JulesClient) -> None:
         self.sandbox = sandbox_runner
         self.jules = jules_client
+        # Dependency injection for sub-services could be improved by passing them in,
+        # but for now we construct them with the injected clients.
         self.audit_orchestrator = AuditOrchestrator(jules_client, sandbox_runner)
         self.llm_reviewer = LLMReviewer(sandbox_runner=sandbox_runner)
 
@@ -46,8 +49,16 @@ class CycleNodes:
 
         instruction = settings.get_template("ARCHITECT_INSTRUCTION.md").read_text()
 
+        # Logic moved from CLI: requested_cycle_count is now the primary driver if present
         if state.get("requested_cycle_count"):
             n = state.get("requested_cycle_count")
+            instruction += (
+                f"\n\nIMPORTANT CONSTRAINT: The development plan MUST be divided into "
+                f"exactly {n} implementation cycles."
+            )
+        # Fallback if just planned_cycle_count is used (backward compatibility)
+        elif state.get("planned_cycle_count"):
+            n = state.get("planned_cycle_count")
             instruction += (
                 f"\n\nIMPORTANT CONSTRAINT: The development plan MUST be divided into "
                 f"exactly {n} implementation cycles."
@@ -134,7 +145,7 @@ class CycleNodes:
         target_files = await self._read_files(target_paths)
         context_docs = await self._read_files(context_paths)
 
-        model = "claude-3-5-sonnet"
+        model = settings.reviewer.fast_model
 
         audit_feedback = await self.llm_reviewer.review_code(
             target_files=target_files,

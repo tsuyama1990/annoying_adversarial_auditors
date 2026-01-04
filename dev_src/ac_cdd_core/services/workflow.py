@@ -1,0 +1,260 @@
+import os
+import sys
+
+from ac_cdd_core.config import settings
+from ac_cdd_core.graph import GraphBuilder
+from ac_cdd_core.interfaces import IWorkflowOrchestrator
+from ac_cdd_core.messages import SuccessMessages, ensure_api_key
+from ac_cdd_core.service_container import ServiceContainer
+from ac_cdd_core.services.audit_orchestrator import AuditOrchestrator
+from ac_cdd_core.services.git_ops import GitManager
+from ac_cdd_core.services.jules_client import JulesClient
+from ac_cdd_core.session_manager import SessionManager
+from ac_cdd_core.state import CycleState
+from ac_cdd_core.utils import KeepAwake, logger
+from langchain_core.runnables import RunnableConfig
+from rich.console import Console
+from rich.panel import Panel
+
+console = Console()
+
+
+class WorkflowService(IWorkflowOrchestrator):
+    def __init__(self) -> None:
+        self.services = ServiceContainer.default()
+        self.builder = GraphBuilder(self.services)
+
+    async def run_gen_cycles(self, cycles: int, project_session_id: str | None) -> None:
+        with KeepAwake(reason="Generating Architecture and Cycles"):
+            console.rule("[bold blue]Architect Phase: Generating Cycles[/bold blue]")
+
+        ensure_api_key()
+        graph = self.builder.build_architect_graph()
+
+        initial_state = CycleState(
+            cycle_id=settings.DUMMY_CYCLE_ID,
+            project_session_id=project_session_id,
+            planned_cycle_count=cycles,
+            requested_cycle_count=cycles,
+        )
+
+        try:
+            thread_id = project_session_id or "architect-session"
+            config = RunnableConfig(configurable={"thread_id": thread_id}, recursion_limit=50)
+            final_state = await graph.ainvoke(initial_state, config)
+
+            if final_state.get("error"):
+                console.print(f"[red]Architect Phase Failed:[/red] {final_state['error']}")
+                sys.exit(1)
+            else:
+                session_id_val = final_state["project_session_id"]
+                integration_branch = final_state["integration_branch"]
+
+                SessionManager.save_session(session_id_val, integration_branch)
+                git = GitManager()
+                try:
+                    await git.create_integration_branch(session_id_val, branch_name=integration_branch)
+                except Exception as e:
+                    logger.warning(f"Could not prepare integration branch: {e}")
+
+                console.print(SuccessMessages.architect_complete(session_id_val, integration_branch))
+
+        except Exception:
+            console.print("[bold red]Architect execution failed.[/bold red]")
+            logger.exception("Architect execution failed")
+            sys.exit(1)
+        finally:
+            await self.builder.cleanup()
+
+        # Initialize plan_status.json
+        try:
+            status_file = settings.paths.documents_dir / "system_prompts" / "plan_status.json"
+            status_file.parent.mkdir(parents=True, exist_ok=True)
+
+            cycle_list = []
+            for i in range(1, cycles + 1):
+                cycle_list.append({"id": f"{i:02}", "status": "planned"})
+
+            import json
+            status_file.write_text(json.dumps({"cycles": cycle_list}, indent=2))
+            console.print(f"[green]Initialized plan_status.json with {cycles} cycles.[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to initialize plan_status.json: {e}[/yellow]")
+
+    async def run_cycle(
+        self, cycle_id: str, resume: bool, auto: bool, start_iter: int, project_session_id: str | None
+    ) -> None:
+        if cycle_id.lower() == "all":
+            await self._run_all_cycles(resume, auto, start_iter, project_session_id)
+            return
+
+        await self._run_single_cycle(cycle_id, resume, auto, start_iter, project_session_id)
+
+    async def _run_all_cycles(self, resume: bool, auto: bool, start_iter: int, project_session_id: str | None) -> None:
+        try:
+            status_path = settings.get_template("plan_status.json")
+            if status_path.exists():
+                import json
+                data = json.loads(status_path.read_text())
+                raw_cycles = data.get("cycles", [])
+                cycles_to_run = []
+                if raw_cycles and isinstance(raw_cycles[0], dict):
+                     for c in raw_cycles:
+                         if c.get("status") != "completed":
+                             cycles_to_run.append(c.get("id"))
+                else:
+                    cycles_to_run = raw_cycles or settings.default_cycles
+            else:
+                cycles_to_run = settings.default_cycles
+        except Exception:
+            cycles_to_run = settings.default_cycles
+
+        console.print(f"[bold cyan]Running ALL Planned Cycles: {cycles_to_run}[/bold cyan]")
+        for cid in cycles_to_run:
+            await self._run_single_cycle(str(cid), resume, auto, start_iter, project_session_id)
+
+    async def _run_single_cycle(
+        self, cycle_id: str, resume: bool, auto: bool, start_iter: int, project_session_id: str | None
+    ) -> None:
+        with KeepAwake(reason=f"Running Implementation Cycle {cycle_id}"):
+            console.rule(f"[bold green]Coder Phase: Cycle {cycle_id}[/bold green]")
+
+        ensure_api_key()
+        graph = self.builder.build_coder_graph()
+
+        try:
+            if auto:
+                os.environ["AC_CDD_AUTO_APPROVE"] = "1"
+
+            session_data = SessionManager.load_session() or {}
+            state = CycleState(
+                cycle_id=cycle_id,
+                iteration_count=start_iter,
+                resume_mode=resume,
+                project_session_id=project_session_id or session_data.get("session_id"),
+                integration_branch=session_data.get("integration_branch"),
+            )
+
+            thread_id = f"cycle-{cycle_id}-{state.project_session_id}"
+            config = RunnableConfig(configurable={"thread_id": thread_id}, recursion_limit=50)
+            final_state = await graph.ainvoke(state, config)
+
+            if final_state.get("error"):
+                console.print(f"[red]Cycle {cycle_id} Failed:[/red] {final_state['error']}")
+                sys.exit(1)
+
+            console.print(
+                SuccessMessages.cycle_complete(cycle_id, f"{int(cycle_id) + 1:02}")
+            )
+
+            self._update_plan_status(cycle_id)
+
+        except Exception:
+            console.print(f"[bold red]Cycle {cycle_id} execution failed.[/bold red]")
+            logger.exception("Cycle execution failed")
+            sys.exit(1)
+        finally:
+            await self.builder.cleanup()
+
+    def _update_plan_status(self, cycle_id: str) -> None:
+        try:
+            status_path = settings.get_template("plan_status.json")
+            user_status_path = settings.paths.documents_dir / "system_prompts" / "plan_status.json"
+
+            if user_status_path.exists():
+                target_path = user_status_path
+            elif status_path.exists():
+                target_path = status_path
+            else:
+                return
+
+            import json
+            data = json.loads(target_path.read_text())
+            cycles_list = data.get("cycles", [])
+            updated = False
+            if cycles_list and isinstance(cycles_list[0], dict):
+                for c in cycles_list:
+                    if c.get("id") == cycle_id:
+                        c["status"] = "completed"
+                        updated = True
+
+            if updated:
+                target_path.write_text(json.dumps(data, indent=2))
+                console.print(f"[green]Updated status for Cycle {cycle_id} to completed.[/green]")
+
+        except Exception as e:
+            logger.warning(f"Failed to update plan_status.json: {e}")
+
+    async def start_session(self, prompt: str, audit_mode: bool, max_retries: int) -> None:
+        console.rule("[bold magenta]Starting Jules Session[/bold magenta]")
+
+        docs_dir = settings.paths.documents_dir
+        spec_files = {
+            str(docs_dir / f): (docs_dir / f).read_text(encoding="utf-8")
+            for f in settings.architect_context_files
+            if (docs_dir / f).exists()
+        }
+
+        if audit_mode:
+            orch = AuditOrchestrator(self.services.jules, self.builder.sandbox)
+            try:
+                result = await orch.run_interactive_session(
+                    prompt=prompt,
+                    spec_files=spec_files,
+                    max_retries=max_retries,
+                )
+                if result and result.get("pr_url"):
+                    console.print(
+                        Panel(
+                            f"Audit & Implementation Complete.\nPR: {result['pr_url']}",
+                            style="bold green",
+                        )
+                    )
+            except Exception:
+                console.print("[bold red]Session Failed.[/bold red]")
+                logger.exception("Session Failed")
+                sys.exit(1)
+        else:
+            client = self.services.jules or JulesClient()
+            try:
+                result = await client.run_session(
+                    session_id=settings.current_session_id,
+                    prompt=prompt,
+                    files=list(spec_files.keys()),
+                )
+                if result and result.get("pr_url"):
+                    console.print(
+                        Panel(
+                            f"Implementation Sent.\nPR: {result['pr_url']}",
+                            style="bold green",
+                        )
+                    )
+            except Exception:
+                console.print("[bold red]Session Failed.[/bold red]")
+                logger.exception("Session Failed")
+                sys.exit(1)
+
+    async def finalize_session(self, project_session_id: str | None) -> None:
+        console.rule("[bold cyan]Finalizing Development Session[/bold cyan]")
+        ensure_api_key()
+
+        session_data = SessionManager.load_session() or {}
+        sid = project_session_id or session_data.get("session_id")
+        integration_branch = session_data.get("integration_branch")
+
+        if not sid or not integration_branch:
+            console.print("[red]No active session found to finalize.[/red]")
+            sys.exit(1)
+
+        git = GitManager()
+        try:
+            pr_url = await git.create_final_pr(
+                integration_branch=integration_branch,
+                title=f"Finalize Development Session: {sid}",
+                body=f"This PR merges all implemented cycles from session {sid} into main.",
+            )
+            console.print(SuccessMessages.session_finalized(pr_url))
+            SessionManager.clear_session()
+        except Exception as e:
+            console.print(f"[bold red]Finalization failed:[/bold red] {e}")
+            sys.exit(1)

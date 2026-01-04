@@ -22,9 +22,10 @@ class AuditOrchestrator:
         self,
         jules_client: JulesClient | None = None,
         sandbox_runner: "SandboxRunner | None" = None,
+        plan_auditor: PlanAuditor | None = None,
     ) -> None:
         self.jules = jules_client or JulesClient()
-        self.auditor = PlanAuditor()
+        self.auditor = plan_auditor or PlanAuditor()
         self.sandbox = sandbox_runner
 
     async def run_interactive_session(

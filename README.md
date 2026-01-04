@@ -121,10 +121,10 @@ You can configure different models for different agents to optimize for cost and
 
 ```env
 # Smart model for Jules (fixing/refinement) - High capability required
-SMART_MODEL=claude-3-5-sonnet-20241022
+AC_CDD_REVIEWER__SMART_MODEL=claude-3-5-sonnet
 
 # Fast model for LLMReviewer (auditing) & QA Analyst - Speed & context required
-FAST_MODEL=gemini-2.0-flash-exp
+AC_CDD_REVIEWER__FAST_MODEL=gemini-2.0-flash-exp
 ```
 
 ## 🚀 Usage

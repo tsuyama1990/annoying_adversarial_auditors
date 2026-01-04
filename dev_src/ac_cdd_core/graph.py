@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from .graph_nodes import CycleNodes
+from .interfaces import IGraphNodes
 from .sandbox import SandboxRunner
 from .service_container import ServiceContainer
 from .services.jules_client import JulesClient
@@ -13,13 +14,16 @@ from .state import CycleState
 
 class GraphBuilder:
     def __init__(self, services: ServiceContainer) -> None:
-        # Initialize SandboxRunner directly as it's not part of ServiceContainer
+        # Initialize SandboxRunner via ServiceContainer or directly if not present (though it's not a service in ServiceContainer definition currently)
+        # Refactoring to avoid direct instantiation if possible, but SandboxRunner is specific to execution.
+        # For now, we keep it here but we can inject it if we extend ServiceContainer.
         self.sandbox = SandboxRunner()
 
         # Use jules from services, fallback to direct instantiation if None
         self.jules = services.jules if services.jules else JulesClient()
 
-        self.nodes = CycleNodes(self.sandbox, self.jules)
+        # Inject dependencies into CycleNodes
+        self.nodes: IGraphNodes = CycleNodes(self.sandbox, self.jules)
 
     async def cleanup(self) -> None:
         """Cleanup resources, specifically the sandbox."""
@@ -42,9 +46,9 @@ class GraphBuilder:
         workflow = StateGraph(CycleState)
 
         workflow.add_node("coder_session", self.nodes.coder_session_node)
-        workflow.add_node("auditor", self.nodes.auditor_node)  # type: ignore[arg-type]
+        workflow.add_node("auditor", self.nodes.auditor_node)
         workflow.add_node("committee_manager", self.nodes.committee_manager_node)
-        workflow.add_node("uat_evaluate", self.nodes.uat_evaluate_node)  # type: ignore[arg-type]
+        workflow.add_node("uat_evaluate", self.nodes.uat_evaluate_node)
 
         workflow.add_edge(START, "coder_session")
 

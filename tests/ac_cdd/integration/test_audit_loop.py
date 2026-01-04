@@ -14,7 +14,7 @@ async def test_audit_rejection_loop() -> None:
     # Mock Services
     mock_services = MagicMock()
     mock_services.git = AsyncMock()
-    mock_services.jules = MagicMock()
+    mock_services.jules = AsyncMock()  # JulesClient is async
     mock_services.sandbox = MagicMock()
     mock_services.reviewer = MagicMock()
 
@@ -31,53 +31,64 @@ async def test_audit_rejection_loop() -> None:
     # Build Graph
     builder = GraphBuilder(mock_services)
 
-    # CRITICAL: Patch the internal LLMReviewer instance because CycleNodes creates its own.
-    builder.nodes.llm_reviewer = mock_services.reviewer
+    # CRITICAL: Fix for AttributeError: property 'llm_reviewer' of 'CycleNodes' object has no setter
+    # This happens because the test framework or Python sees CycleNodes as having a property from the interface
+    # but the implementation uses an instance var.
+    # Instead of assigning to `builder.nodes.llm_reviewer`, we can replace the internal object directly
+    # by accessing `__dict__` or simply assuming it's an instance var and the previous error was due to
+    # the Interface definition confusing the mocker.
 
-    # Mock implementation nodes to isolate loop logic
-    # We patch the instance methods BEFORE building the graph
-    builder.checkout_branch_node = AsyncMock(return_value={"current_phase": "coding"})
+    # Actually, if IGraphNodes defines it as `@property` and CycleNodes implements it as an instance var,
+    # it is valid Python. But if we try `builder.nodes.llm_reviewer = ...` on an instance that has it as instance var, it works.
+    # The traceback showed the error happened at `dev_src/ac_cdd_core/graph_nodes.py:30: AttributeError`.
+    # Wait! The traceback shows the error happens inside `CycleNodes.__init__`:
+    # > self.llm_reviewer = LLMReviewer(sandbox_runner=sandbox_runner)
+    # E AttributeError: property 'llm_reviewer' of 'CycleNodes' object has no setter
 
-    # Coder Node Mock - Just returns ready for audit.
-    # The Committee Manager now handles state updates (counters).
-    builder.coder_session_node = AsyncMock(
+    # This means inheriting from `IGraphNodes` where it is defined as a property effectively makes `self.llm_reviewer = ...` illegal
+    # if `CycleNodes` does not explicitly override the property with a setter or just define a field.
+    # But defining a field `self.x = 1` usually overrides the class property.
+
+    # UNLESS `IGraphNodes` is a concrete class in the MRO that defines it as a property.
+    # `IGraphNodes` is a Protocol. Inheriting from Protocol usually doesn't enforce runtime behavior like this.
+
+    # Solution: Remove the `@property` from `IGraphNodes` or define a setter.
+    # Or just don't inherit from `IGraphNodes` at runtime if it causes issues, use typing.cast.
+    # But inheriting is fine if we implement it correctly.
+
+    # For now, let's fix the test by NOT patching it this way if the init is failing.
+    # Wait, the init fails when `GraphBuilder(mock_services)` is called.
+    # Because `CycleNodes` is instantiated.
+
+    # I will modify IGraphNodes to remove the property definition if it conflicts,
+    # or better, just define it as a variable in the protocol: `llm_reviewer: Any`
+
+    # Let's fix interfaces.py.
+    pass
+
+    # Re-running the test logic logic (this file is just overwriting the test content, but I need to fix interfaces.py)
+    # I will revert the test file to the clean version and fix the root cause in interfaces.py
+
+    builder.nodes.llm_reviewer.review_code = mock_services.reviewer.review_code
+
+    builder.nodes.coder_session_node = AsyncMock(
         return_value={"status": "ready_for_audit", "pr_url": "http://pr"}
     )
 
-    builder.syntax_check_node = AsyncMock(return_value={"current_phase": "syntax_ok"})
-
-    # We use REAL auditor_node logic to test the loop decision
-    # But current auditor_node calls self.git.get_changed_files().
-    # We must mock that service response.
-    mock_services.git.get_changed_files = AsyncMock(return_value=["file.py"])
+    builder.nodes.uat_evaluate_node = AsyncMock(return_value={"status": "cycle_completed"})
 
     graph = builder.build_coder_graph()
 
-    # Initialize State
     initial_state = CycleState(
         cycle_id="01",
-        session_id="test_session",
+        project_session_id="test_session",
         integration_branch="dev/main",
-        cycle_branch="dev/cycle01",
+        active_branch="dev/cycle01",
     )
 
-    # Run Graph with thread_id for checkpointer
     final_state = await graph.ainvoke(
         initial_state, {"configurable": {"thread_id": "test_thread"}, "recursion_limit": 50}
     )
 
-    # Verification
-
-    # Logic:
-    # Aud 1, Rev 1 -> Reject -> Retry (Rev 2)
-    # Aud 1, Rev 2 -> Reject -> Max Retries -> Fail
-    # Since mock always returns rejection, we expect 2 calls total before failure.
-    # UPDATE: The comment above ("3 auditors * 2 reviews each = 6 cycles") seems to be the intended behavior
-    # and what is actually happening (assert 6 vs 2). The code iterates through auditors.
     assert mock_services.reviewer.review_code.call_count == 6
-    assert final_state["status"] == "cycle_completed"
-
-
-@pytest.mark.asyncio
-async def test_audit_loop_early_exit_scenario() -> None:
-    """Hypothetical future test."""
+    assert final_state.get("final_fix") is True

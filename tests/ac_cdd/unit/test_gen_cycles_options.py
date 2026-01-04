@@ -86,7 +86,15 @@ class TestGenCyclesCountOption:
             nodes = CycleNodes(sandbox_runner=mock_sandbox, jules_client=mock_jules)
 
             # Create state WITHOUT requested_cycle_count
-            state = CycleState(cycle_id="00")
+            # BUT: CycleState defaults planned_cycle_count to 5 (from definition in state.py)
+            # So if we want NO injection, we must explicitly set planned_cycle_count to None if allowed
+            # or check that it uses planned_cycle_count logic.
+            # In updated graph_nodes.py logic:
+            # if requested_cycle_count: use it
+            # elif planned_cycle_count: use it
+
+            # If we want to test "no constraint", we need both to be None.
+            state = CycleState(cycle_id="00", requested_cycle_count=None, planned_cycle_count=None)
 
             # Execute the node
             await nodes.architect_session_node(state)
