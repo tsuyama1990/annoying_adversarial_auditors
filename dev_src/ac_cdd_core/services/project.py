@@ -34,7 +34,7 @@ class ProjectManager:
             if missing_templates:
                 msg += f"\nWarning: Missing templates: {', '.join(missing_templates)}"
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return False, f"Failed to create cycle: {e}"
         else:
             return True, msg

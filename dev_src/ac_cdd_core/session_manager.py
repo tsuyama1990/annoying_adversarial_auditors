@@ -42,7 +42,7 @@ class SessionManager:
         logger.info(f"Session saved: {project_session_id}")
 
     @classmethod
-    def update_session(cls, **kwargs: Any) -> None:  # noqa: ANN401
+    def update_session(cls, **kwargs: Any) -> None:
         """
         Update existing session file with new data.
         Preserves existing keys not in kwargs.
@@ -207,7 +207,7 @@ class SessionManager:
         If session_name is None, attempts to load it from the session file.
         Returns resume_info dict if successful.
         """
-        from ac_cdd_core.services.jules_client import (  # noqa: PLC0415
+        from ac_cdd_core.services.jules_client import (
             JulesClient,
             JulesSessionError,
         )

@@ -145,7 +145,7 @@ class KeepAwake:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=1)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # If it refuses to die, kill it
                 logger.debug("Force killing sleep inhibitor")
                 if self.process.poll() is None:

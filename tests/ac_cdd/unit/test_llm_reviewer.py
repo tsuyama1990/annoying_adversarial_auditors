@@ -46,7 +46,7 @@ async def test_review_code_success(reviewer: LLMReviewer) -> None:
 async def test_review_code_api_failure(reviewer: LLMReviewer) -> None:
     """Test error handling when API fails."""
     target_files = {"main.py": "content"}
-    context_files = {}
+    context_files: dict[str, str] = {}
 
     with patch("litellm.acompletion", side_effect=Exception("API Error")):
         result = await reviewer.review_code(target_files, context_files, "inst", "model")

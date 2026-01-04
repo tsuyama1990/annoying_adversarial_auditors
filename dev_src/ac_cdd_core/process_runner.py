@@ -43,7 +43,7 @@ class ProcessRunner:
 
                 if check:
                     pass
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error(f"Execution failed for '{cmd_str}': {e}")
             return "", str(e), -1
         else:

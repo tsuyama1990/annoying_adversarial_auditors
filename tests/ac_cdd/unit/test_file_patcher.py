@@ -6,11 +6,11 @@ from ac_cdd_core.services.file_ops import FilePatcher
 
 
 @pytest.fixture
-def patcher():
+def patcher() -> FilePatcher:
     return FilePatcher()
 
 
-def test_apply_changes_create(patcher) -> None:
+def test_apply_changes_create(patcher: FilePatcher) -> None:
     """Test creating a new file."""
     ops = [FileCreate(path="new_file.py", content="print('hello')")]
 
@@ -23,7 +23,7 @@ def test_apply_changes_create(patcher) -> None:
         mock_write.assert_called_with("print('hello')", encoding="utf-8")
 
 
-def test_apply_changes_patch_success(patcher) -> None:
+def test_apply_changes_patch_success(patcher: FilePatcher) -> None:
     """Test patching an existing file."""
     ops = [FilePatch(path="existing.py", search_block="old_code", replace_block="new_code")]
 
@@ -39,7 +39,7 @@ def test_apply_changes_patch_success(patcher) -> None:
         mock_write.assert_called_with("start\nnew_code\nend", encoding="utf-8")
 
 
-def test_apply_changes_dry_run(patcher) -> None:
+def test_apply_changes_dry_run(patcher: FilePatcher) -> None:
     """Test dry run does not write."""
     ops = [FileCreate(path="new_file.py", content="print('hello')")]
 

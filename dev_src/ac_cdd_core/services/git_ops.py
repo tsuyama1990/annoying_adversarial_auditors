@@ -118,7 +118,7 @@ class GitManager:
             out = await self._run_git(["diff", "--name-only", f"{base_branch}...HEAD"], check=False)
             if out:
                 files.update(out.splitlines())
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug("Diff check failed (likely no base branch yet).")
 
         out = await self._run_git(["diff", "--name-only", "--cached"], check=False)
@@ -144,7 +144,7 @@ class GitManager:
                 check=True,
             )
             logger.info("PR merged successfully.")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(f"Failed to auto-merge PR. Please merge manually. Error: {e}")
 
     async def smart_checkout(self, target: str, is_pr: bool = False, force: bool = False) -> None:
@@ -271,7 +271,7 @@ class GitManager:
                         f"Branch '{branch}' has diverged from remote.\n"
                         f"Resolve divergence before proceeding."
                     )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(f"Could not validate remote branch state: {e}")
 
         return True, ""

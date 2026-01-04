@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +15,7 @@ def mock_agent() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def plan_auditor(mock_agent: MagicMock) -> PlanAuditor:  # noqa: ARG001
+def plan_auditor(mock_agent: MagicMock) -> PlanAuditor:
     return PlanAuditor()
 
 
@@ -27,8 +28,11 @@ async def test_audit_plan_approved(plan_auditor: PlanAuditor, mock_agent: MagicM
     mock_run_result.data = expected_result
     mock_agent.run = AsyncMock(return_value=mock_run_result)
 
-    plan_details = {"planId": "123", "steps": [{"id": "1", "description": "Do stuff"}]}
-    spec_context = {"SPEC.md": "Requirements"}
+    plan_details: dict[str, Any] = {
+        "planId": "123",
+        "steps": [{"id": "1", "description": "Do stuff"}],
+    }
+    spec_context: dict[str, str] = {"SPEC.md": "Requirements"}
 
     result = await plan_auditor.audit_plan(plan_details, spec_context)
 
@@ -44,8 +48,8 @@ async def test_audit_plan_rejected(plan_auditor: PlanAuditor, mock_agent: MagicM
     mock_run_result.data = expected_result
     mock_agent.run = AsyncMock(return_value=mock_run_result)
 
-    plan_details = {"planId": "123", "steps": []}
-    spec_context = {}
+    plan_details: dict[str, Any] = {"planId": "123", "steps": []}
+    spec_context: dict[str, str] = {}
 
     result = await plan_auditor.audit_plan(plan_details, spec_context)
 

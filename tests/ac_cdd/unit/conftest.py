@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,7 +7,7 @@ from ac_cdd_core.service_container import ServiceContainer
 
 
 @pytest.fixture(autouse=True)
-def mock_settings(monkeypatch):
+def mock_settings(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Mock the global settings object and env vars for all unit tests."""
     # Pre-emptively set environment variables to avoid pydantic-ai import errors
     monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy_key_for_test")
@@ -35,52 +36,52 @@ def mock_settings(monkeypatch):
 
 
 @pytest.fixture
-def mock_file_patcher():
+def mock_file_patcher() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def mock_contract_manager():
+def mock_contract_manager() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def mock_artifact_manager():
+def mock_artifact_manager() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def mock_presenter():
+def mock_presenter() -> MagicMock:
     presenter = MagicMock()
     presenter.review_and_confirm.return_value = True
     return presenter
 
 
 @pytest.fixture
-def mock_jules():
+def mock_jules() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def mock_reviewer():
+def mock_reviewer() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
-def mock_git():
+def mock_git() -> MagicMock:
     return MagicMock()
 
 
 @pytest.fixture
 def mock_services(
-    mock_file_patcher,
-    mock_contract_manager,
-    mock_artifact_manager,
-    mock_presenter,
-    mock_jules,
-    mock_reviewer,
-    mock_git,
-):
+    mock_file_patcher: MagicMock,
+    mock_contract_manager: MagicMock,
+    mock_artifact_manager: MagicMock,
+    mock_presenter: MagicMock,
+    mock_jules: MagicMock,
+    mock_reviewer: MagicMock,
+    mock_git: MagicMock,
+) -> ServiceContainer:
     return ServiceContainer(
         file_patcher=mock_file_patcher,
         contract_manager=mock_contract_manager,
@@ -92,8 +93,8 @@ def mock_services(
 
 
 @pytest.fixture
-def mock_agent_result():
-    def _create_result(output_data):
+def mock_agent_result() -> Any:
+    def _create_result(output_data: Any) -> MagicMock:
         result = MagicMock()
         result.output = output_data
         return result

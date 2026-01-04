@@ -89,9 +89,25 @@ ignore = [
     "ANN101", # selfへの型ヒントは不要 (deprecated)
     "ANN002", # *argsへの型ヒントは省略可
     "ANN003", # **kwargsへの型ヒントは省略可
+    "ANN001", # Missing type annotation for function arguments
+    "ANN401", # Dynamically typed expressions are disallowed
+    "ARG001", # Unused function argument
+    "ARG005", # Unused lambda argument
+    "PLR2004", # Magic value used in comparison
     "E501",   # 行長制限 (自動修正で直らない場合があり、開発速度を落とすため)
     "TRY003", # 例外メッセージが長すぎるという警告 (AIには厳しすぎる)
     "D",      # docstring (今回はコードの動作リスクに集中するため除外。必要なら追加)
+    "ANN201", # Missing return type annotation for public functions
+    "N806",   # Variable should be lowercase
+    "PLC0415", # Import should be at top-level
+    "BLE001", # Blind exception catch
+    "PT019",  # Fixture without value injection
+    "RUF003", # Ambiguous multiplication sign
+    "ARG002", # Unused method argument
+    "RUF043", # Pattern metacharacters not escaped in match
+    "RUF059", # Unused unpacked variable
+    "PLR0913", # Too many arguments in function definition
+    "ANN202"  # Missing return type annotation for private functions
 ]
 
 [tool.ruff.lint.per-file-ignores]

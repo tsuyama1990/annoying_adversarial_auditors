@@ -35,7 +35,7 @@ class SandboxRunner:
             try:
                 logger.info(f"Connecting to existing sandbox: {self.sandbox_id}")
                 self.sandbox = Sandbox.connect(self.sandbox_id, api_key=self.api_key)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(
                     f"Failed to connect to sandbox {self.sandbox_id}: {e}. Creating new."
                 )
@@ -101,7 +101,7 @@ class SandboxRunner:
                     if self.sandbox:
                         try:
                             self.sandbox.kill()
-                        except Exception as sandbox_kill_err:  # noqa: BLE001
+                        except Exception as sandbox_kill_err:
                             logger.debug(f"Failed to kill sandbox: {sandbox_kill_err}")
                         self.sandbox = None
                         self._last_sync_hash = None

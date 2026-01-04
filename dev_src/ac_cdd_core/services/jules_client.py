@@ -76,7 +76,7 @@ class JulesApiClient:
                             if candidate:
                                 self.api_key = candidate
                                 return
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug("Skipping malformed .env line during key check.")
 
     def _ensure_api_key_or_raise(self) -> None:
@@ -107,7 +107,7 @@ class JulesApiClient:
                 resp_body = response.read().decode("utf-8")
                 return dict(json.loads(resp_body)) if resp_body else {}
         except urllib.error.HTTPError as e:
-            if e.code == 404:  # noqa: PLR2004
+            if e.code == 404:
                 msg = f"404 Not Found: {url}"
                 raise JulesApiError(msg) from e
             err_msg = e.read().decode("utf-8")
@@ -186,7 +186,7 @@ class JulesClient:
             self.credentials, self.project_id_from_auth = google.auth.default()  # type: ignore[no-untyped-call]
             if not self.project_id:
                 self.project_id = self.project_id_from_auth
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(
                 f"Could not load Google Credentials: {e}. Falling back to API Key if available."
             )
@@ -232,7 +232,7 @@ class JulesClient:
         prompt: str,
         files: list[str] | None = None,
         require_plan_approval: bool = False,
-        **extra: Any,  # noqa: ANN401
+        **extra: Any,
     ) -> dict[str, Any]:
         """Orchestrates the Jules session."""
         if self.api_client.api_key == "dummy_jules_key" and not self._is_httpx_mocked():
@@ -267,7 +267,7 @@ class JulesClient:
 
         try:
             SessionManager.update_session(agent_session_id=session_name)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(f"Failed to persist Jules Session ID: {e}")
 
         if require_plan_approval:
@@ -294,7 +294,7 @@ class JulesClient:
             if "PYTEST_CURRENT_TEST" not in os.environ:
                 try:
                     await self.git.push_branch(branch)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.warning(f"Could not push branch: {e}")
         except Exception as e:
             if "PYTEST_CURRENT_TEST" in os.environ:
@@ -385,7 +385,7 @@ class JulesClient:
                     if msg:
                         act_id = act.get("name", act.get("id"))
                         return msg, act_id
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(f"Failed to check for inquiry: {e}")
         return None
 
@@ -453,7 +453,7 @@ class JulesClient:
                     raise
                 except JulesApiError as e:
                     logger.warning(f"Poll check failed (transient): {e}")
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.warning(f"Polling loop unexpected error: {e}")
 
                 await self._sleep(self.poll_interval)
@@ -471,7 +471,7 @@ class JulesClient:
                 if "name" in act:
                     processed_ids.add(act["name"])
             logger.info(f"Initialized with {len(processed_ids)} existing activities to ignore.")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(f"Failed to fetch initial activities: {e}")
 
     async def _process_inquiries(
@@ -506,7 +506,7 @@ class JulesClient:
                 await self._send_message(session_url, reply_text)
                 processed_ids.add(act_id)
                 await self._sleep(5)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.error(f"Manager Agent failed: {e}")
 
     def _check_success_state(self, data: dict[str, Any], state: str) -> dict[str, Any] | None:
@@ -553,7 +553,7 @@ class JulesClient:
                 if len(activities) > last_count:
                     self.console.print(f"[dim]Activity Count: {len(activities)}[/dim]")
                     return len(activities)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:  # noqa: S110
             pass
         return last_count
 
@@ -568,7 +568,7 @@ class JulesClient:
                     if user_msg:
                         self.console.print(f"[dim]Sending: {user_msg}[/dim]")
                         await self._send_message(session_url, user_msg)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.debug("Non-blocking input check failed.")
 
     async def send_message(self, session_url: str, content: str) -> None:
@@ -598,7 +598,7 @@ class JulesClient:
                         f"[bold red]Failed to send message: {resp.status_code}[/bold red]"
                     )
                     logger.error(f"SendMessage failed: {resp.text}")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.error(f"SendMessage error: {e}")
 
     async def get_latest_plan(self, session_id: str) -> dict[str, Any] | None:

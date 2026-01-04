@@ -1,5 +1,7 @@
 import os
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,7 +9,7 @@ from ac_cdd_core.config import Settings
 
 
 @pytest.fixture
-def mock_env():
+def mock_env() -> Generator[None, None, None]:
     with patch.dict(
         os.environ,
         {
@@ -19,7 +21,7 @@ def mock_env():
         yield
 
 
-def test_config_env_vars_loaded(mock_env) -> None:
+def test_config_env_vars_loaded(mock_env: Any) -> None:
     """Test that environment variables override defaults."""
     # We must instantiate a new Settings object to pick up the env vars
     # because the global 'settings' object is instantiated at import time.
@@ -49,11 +51,9 @@ def test_get_template_logic() -> None:
     local_settings.paths.templates = Path("/system/templates")
 
     # 1. Mock file existence logic without over-patching
-
     # We mock only Path.exists.
-    # The conflict in previous run was due to nesting patches or autospec issues.
 
-    def side_effect(self) -> bool:
+    def side_effect(self: Path) -> bool:
         s = str(self)
         if s.startswith("/user/docs/system_prompts/foo.md"):
             return True
@@ -96,20 +96,11 @@ def test_path_separation() -> None:
     """
     local_settings = Settings()
 
-    # Setup mock file system
-    # We mock Path.glob, rglob, and exists
-
     with (
         patch("pathlib.Path.glob") as mock_glob,
         patch("pathlib.Path.rglob") as mock_rglob,
         patch("pathlib.Path.exists", return_value=True),
     ):
-        # Mock glob for docs
-        # We need to ensure it only returns for the right directory, but since
-        # the methods are called on specific paths, we can check the path instance in side_effect?
-        # Simpler: just return valid paths and check filtering logic in the test.
-        # But the code logic relies on `self.paths.documents_dir.glob`.
-
         mock_glob.return_value = [Path("/app/dev_documents/spec1.md")]
 
         # Mock rglob for src/tests

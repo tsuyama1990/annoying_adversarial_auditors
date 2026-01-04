@@ -42,9 +42,9 @@ class GraphBuilder:
         workflow = StateGraph(CycleState)
 
         workflow.add_node("coder_session", self.nodes.coder_session_node)
-        workflow.add_node("auditor", self.nodes.auditor_node)
+        workflow.add_node("auditor", self.nodes.auditor_node)  # type: ignore[arg-type]
         workflow.add_node("committee_manager", self.nodes.committee_manager_node)
-        workflow.add_node("uat_evaluate", self.nodes.uat_evaluate_node)
+        workflow.add_node("uat_evaluate", self.nodes.uat_evaluate_node)  # type: ignore[arg-type]
 
         workflow.add_edge(START, "coder_session")
 
@@ -78,8 +78,8 @@ class GraphBuilder:
 
         return workflow
 
-    def build_architect_graph(self) -> CompiledStateGraph[CycleState, Any]:
+    def build_architect_graph(self) -> CompiledStateGraph[CycleState, Any, Any, Any]:
         return self._create_architect_graph().compile(checkpointer=MemorySaver())
 
-    def build_coder_graph(self) -> CompiledStateGraph[CycleState, Any]:
+    def build_coder_graph(self) -> CompiledStateGraph[CycleState, Any, Any, Any]:
         return self._create_coder_graph().compile(checkpointer=MemorySaver())

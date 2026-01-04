@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from ac_cdd_core.domain_models import PlanAuditResult
@@ -6,7 +7,7 @@ from ac_cdd_core.services.audit_orchestrator import AuditOrchestrator
 
 
 @pytest.fixture
-def mock_jules():
+def mock_jules() -> Any:
     with patch("ac_cdd_core.services.audit_orchestrator.JulesClient") as MockJules:
         instance = MockJules.return_value
         instance.run_session = AsyncMock(
@@ -22,7 +23,7 @@ def mock_jules():
 
 
 @pytest.fixture
-def mock_auditor():
+def mock_auditor() -> Any:
     with patch("ac_cdd_core.services.audit_orchestrator.PlanAuditor") as MockAuditor:
         instance = MockAuditor.return_value
         instance.audit_plan = AsyncMock()
@@ -30,12 +31,14 @@ def mock_auditor():
 
 
 @pytest.fixture
-def orchestrator(mock_jules, mock_auditor):
+def orchestrator(mock_jules: MagicMock, mock_auditor: MagicMock) -> AuditOrchestrator:
     return AuditOrchestrator()
 
 
 @pytest.mark.asyncio
-async def test_run_session_approved_first_try(orchestrator, mock_jules, mock_auditor) -> None:
+async def test_run_session_approved_first_try(
+    orchestrator: AuditOrchestrator, mock_jules: MagicMock, mock_auditor: MagicMock
+) -> None:
     # Setup happy path
     mock_jules.wait_for_activity_type.return_value = {
         "planGenerated": {"planId": "plan-1", "steps": []}
@@ -44,7 +47,7 @@ async def test_run_session_approved_first_try(orchestrator, mock_jules, mock_aud
         status="APPROVED", reason="Good", feedback=""
     )
 
-    result = await orchestrator.run_interactive_session("prompt", "source", {"spec": "data"})
+    result = await orchestrator.run_interactive_session("prompt", {"spec": "data"})
 
     assert result["pr_url"] == "http://pr"
     mock_jules.approve_plan.assert_called_with("sess-1", "plan-1")
@@ -52,7 +55,9 @@ async def test_run_session_approved_first_try(orchestrator, mock_jules, mock_aud
 
 
 @pytest.mark.asyncio
-async def test_run_session_rejected_then_approved(orchestrator, mock_jules, mock_auditor) -> None:
+async def test_run_session_rejected_then_approved(
+    orchestrator: AuditOrchestrator, mock_jules: MagicMock, mock_auditor: MagicMock
+) -> None:
     # First plan: Rejected
     # Second plan: Approved
 
@@ -81,7 +86,7 @@ async def test_run_session_rejected_then_approved(orchestrator, mock_jules, mock
         {"planGenerated": {"planId": "plan-2", "steps": []}},
     ]
 
-    await orchestrator.run_interactive_session("prompt", "source", {"spec": "data"})
+    await orchestrator.run_interactive_session("prompt", {"spec": "data"})
 
     # Check that we sent feedback
     mock_jules.send_message.assert_called_once()
@@ -92,7 +97,9 @@ async def test_run_session_rejected_then_approved(orchestrator, mock_jules, mock
 
 
 @pytest.mark.asyncio
-async def test_max_retries_exceeded(orchestrator, mock_jules, mock_auditor) -> None:
+async def test_max_retries_exceeded(
+    orchestrator: AuditOrchestrator, mock_jules: MagicMock, mock_auditor: MagicMock
+) -> None:
     mock_jules.wait_for_activity_type.return_value = {
         "planGenerated": {"planId": "plan-1", "steps": []}
     }
@@ -104,6 +111,6 @@ async def test_max_retries_exceeded(orchestrator, mock_jules, mock_auditor) -> N
     )
 
     with pytest.raises(RuntimeError, match="Max audit retries exceeded"):
-        await orchestrator.run_interactive_session("prompt", "source", {}, max_retries=1)
+        await orchestrator.run_interactive_session("prompt", {}, max_retries=1)
 
     assert mock_jules.send_message.call_count == 1

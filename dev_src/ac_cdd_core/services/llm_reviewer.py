@@ -63,7 +63,7 @@ class LLMReviewer:
             content = response.choices[0].message.content
             return str(content)
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error(f"LLMReviewer failed: {e}")
             return f"SYSTEM_ERROR: LLM API call failed: {e}"
 

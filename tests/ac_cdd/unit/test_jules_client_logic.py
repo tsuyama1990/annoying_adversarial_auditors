@@ -85,6 +85,7 @@ class TestJulesClientLogic(unittest.IsolatedAsyncioTestCase):
         mock_client.get.side_effect = [
             r_session_completed,
             r_acts_question,
+            r_acts_empty,  # For log_activities_count
             r_session_success,
             r_acts_empty,
         ]
@@ -157,6 +158,7 @@ class TestJulesClientLogic(unittest.IsolatedAsyncioTestCase):
         mock_client.get.side_effect = [
             r_session_completed,
             r_acts_old,
+            r_acts_logging,  # For log_activities_count
             r_session_success,
             r_acts_empty,
         ]

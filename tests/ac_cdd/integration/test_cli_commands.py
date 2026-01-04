@@ -108,11 +108,11 @@ def test_gen_cycles_command(
     from ac_cdd_core.cli import app
 
     with (
-        patch("ac_cdd_core.messages.ensure_api_key"),
+        patch("ac_cdd_core.cli.ensure_api_key"),
         patch("ac_cdd_core.cli.ServiceContainer"),
         # Patch where the classes are defined, not in cli (lazy imports)
-        patch("ac_cdd_core.graph.GraphBuilder", return_value=mock_graph_builder),
-        patch("ac_cdd_core.session_manager.SessionManager", mock_session_manager),
+        patch("ac_cdd_core.cli.GraphBuilder", return_value=mock_graph_builder),
+        patch("ac_cdd_core.cli.SessionManager", mock_session_manager),
         patch("ac_cdd_core.cli.CycleState") as MockCycleState,
     ):
         # Mock graph execution
@@ -148,17 +148,24 @@ def test_run_cycle_command(
     from ac_cdd_core.cli import app
 
     with (
-        patch("ac_cdd_core.messages.ensure_api_key"),
+        patch("ac_cdd_core.cli.ensure_api_key"),
         patch("ac_cdd_core.cli.ServiceContainer"),
-        patch("ac_cdd_core.graph.GraphBuilder", return_value=mock_graph_builder),
-        patch("ac_cdd_core.session_manager.SessionManager", mock_session_manager),
+        patch("ac_cdd_core.cli.GraphBuilder", return_value=mock_graph_builder),
+        patch("ac_cdd_core.cli.SessionManager", mock_session_manager),
         patch("ac_cdd_core.validators.SessionValidator", return_value=mock_session_validator),
     ):
         # Setup mocks
         mock_session_manager.load_or_reconcile_session.return_value = {
             "project_session_id": "test",
             "integration_branch": "dev/test",
+            "session_id": "test",
         }
+        mock_session_manager.load_session.return_value = {
+            "project_session_id": "test",
+            "integration_branch": "dev/test",
+            "session_id": "test",
+        }
+
         mock_session_validator.validate = AsyncMock(return_value=(True, ""))
 
         mock_graph = MagicMock()
@@ -177,13 +184,18 @@ def test_finalize_session_command(
     from ac_cdd_core.cli import app
 
     with (
-        patch("ac_cdd_core.session_manager.SessionManager", mock_session_manager),
-        patch("ac_cdd_core.services.git_ops.GitManager", return_value=mock_git_manager),
+        patch("ac_cdd_core.cli.ensure_api_key"),
+        patch("ac_cdd_core.cli.SessionManager", mock_session_manager),
+        patch("ac_cdd_core.cli.GitManager", return_value=mock_git_manager),
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.read_text", return_value='{"cycles": ["01"]}'),
     ):
         mock_session_manager.load_or_reconcile_session.return_value = {
             "project_session_id": "test",
+            "integration_branch": "dev/test",
+        }
+        mock_session_manager.load_session.return_value = {
+            "session_id": "test",
             "integration_branch": "dev/test",
         }
         mock_session_manager.validate_session.return_value = (True, "")
@@ -192,4 +204,4 @@ def test_finalize_session_command(
         result = runner.invoke(app, ["finalize-session"])
 
         assert result.exit_code == 0
-        assert "Session Finalized" in result.stdout
+        assert "Final PR Created!" in result.stdout

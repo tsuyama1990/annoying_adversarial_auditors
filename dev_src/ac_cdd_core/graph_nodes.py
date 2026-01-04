@@ -34,7 +34,7 @@ class CycleNodes:
             if p.exists() and p.is_file():
                 try:
                     result[path_str] = p.read_text(encoding="utf-8")
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     console.print(f"[yellow]Warning: Could not read {path_str}: {e}[/yellow]")
             else:
                 pass
@@ -115,7 +115,7 @@ class CycleNodes:
 
             if result.get("status") == "success" or result.get("pr_url"):
                 return {"status": "ready_for_audit", "pr_url": result.get("pr_url")}
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             console.print(f"[red]Coder Session Failed: {e}[/red]")
             return {"status": "failed", "error": str(e)}
         else:

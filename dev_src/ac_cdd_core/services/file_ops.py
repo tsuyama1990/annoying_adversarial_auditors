@@ -106,7 +106,7 @@ class FilePatcher:
             try:
                 file_content = p.read_text(encoding="utf-8")
                 content_str += f"\n=== {p} ===\n{file_content}"
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Skipping {p}: {e}")
         return content_str
 
@@ -120,7 +120,7 @@ class FilePatcher:
                     line = raw_line.strip()
                     if line and not line.startswith("#"):
                         ignored.add(line)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Failed to read .auditignore: {e}")
         return ignored
 

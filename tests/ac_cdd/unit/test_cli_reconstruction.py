@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -8,13 +9,13 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def mock_dependencies():
+def mock_dependencies() -> Any:
     with (
         patch("ac_cdd_core.cli.GraphBuilder") as mock_graph_cls,
         patch("ac_cdd_core.cli.SessionManager") as mock_session_mgr,
         patch("ac_cdd_core.cli.ensure_api_key"),
         patch("ac_cdd_core.cli.GitManager") as mock_git_cls,
-        patch("ac_cdd_core.cli.SessionValidator") as mock_validator_cls,
+        patch("ac_cdd_core.validators.SessionValidator") as mock_validator_cls,
         patch("ac_cdd_core.cli.KeepAwake"),
         patch("ac_cdd_core.cli.ServiceContainer"),
     ):
@@ -39,7 +40,7 @@ def mock_dependencies():
         }
 
 
-def test_gen_cycles_command(mock_dependencies) -> None:
+def test_gen_cycles_command(mock_dependencies: dict[str, Any]) -> None:
     # Mock async graph run
     mock_graph = mock_dependencies["graph"]
     # ainvoke returns final state (dict to support .get('error') returning None)
@@ -59,7 +60,7 @@ def test_gen_cycles_command(mock_dependencies) -> None:
     assert "Using saved session" not in result.stdout  # Should be new
 
 
-def test_run_cycle_command(mock_dependencies) -> None:
+def test_run_cycle_command(mock_dependencies: dict[str, Any]) -> None:
     mock_graph = mock_dependencies["graph"]
     mock_session = mock_dependencies["session"]
     mock_return = {
@@ -88,10 +89,14 @@ def test_run_cycle_command(mock_dependencies) -> None:
         assert "Sent" in result.stdout
 
 
-def test_finalize_session_command(mock_dependencies) -> None:
+def test_finalize_session_command(mock_dependencies: dict[str, Any]) -> None:
     mock_session = mock_dependencies["session"]
     mock_session.load_or_reconcile_session.return_value = {
         "project_session_id": "test",
+        "integration_branch": "dev/test",
+    }
+    mock_session.load_session.return_value = {
+        "session_id": "test",
         "integration_branch": "dev/test",
     }
     mock_session.validate_session.return_value = (True, None)
