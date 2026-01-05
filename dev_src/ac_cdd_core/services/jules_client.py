@@ -155,7 +155,8 @@ class JulesApiClient:
     def approve_plan(self, session_id: str, plan_id: str) -> dict[str, Any]:
         """Approves the current plan in the session, triggering implementation."""
         endpoint = f"{session_id}:approvePlan"
-        payload = {"planId": plan_id}
+        # API doesn't accept planId in payload - plan is implicit from session state
+        payload: dict[str, Any] = {}
         return self._request("POST", endpoint, payload)
 
     def list_activities(self, session_id_path: str) -> list[dict[str, Any]]:
