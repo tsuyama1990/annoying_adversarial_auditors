@@ -431,6 +431,7 @@ class JulesClient:
                     else:
                         data = resp.json()
                         state = data.get("state")
+                        logger.info(f"Jules session state: {state}")
                         await self._process_inquiries(
                             client, session_url, state, processed_activity_ids
                         )
