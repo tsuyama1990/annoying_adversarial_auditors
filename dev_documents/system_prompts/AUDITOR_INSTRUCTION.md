@@ -23,15 +23,16 @@ If there are too many problems, prioritize to share the critical issues.
 You are reviewing code for **CYCLE {{cycle_id}} ONLY**. 
 - Review ONLY against the requirements in `CYCLE{{cycle_id}}/SPEC.md`
 - `ARCHITECT_INSTRUCTION.md` describes the overall project structure, but you must ONLY verify the current cycle's implementation
-- Do NOT require features from other cycles (e.g., CYCLE02, CYCLE03)
-- Do NOT suggest implementing features marked "Future Cycle" or "Cycle 2" in SPEC.md
+- **Do NOT require features from other cycles (e.g., CYCLE02, CYCLE03)**
+- **Do NOT suggest implementing features marked "Future Cycle" or "Cycle 2" in SPEC.md**
 - If SPEC.md explicitly defers a feature to a later cycle, DO NOT criticize its absence
 - Focus on: "Is the CURRENT cycle's scope implemented correctly?" NOT "Is everything implemented?"
 
 
 ## Audit Guidelines
 
-**YOU MUST FIND AT LEAST ONE ISSUE**. You must review the codes very critically, to improve readability, efficiency, or robustness even further based on below 4 view points.
+Review the code critically to improve readability, efficiency, or robustness based on the following viewpoints.
+**IMPORTANT**: Only report issues that are actually present. If the code correctly implements the current cycle's requirements, APPROVE it.
 
 ## 1. Architecture & Configuration (Compliance)
 - [ ] **Layer Compliance:** Does the code strictly follow the layer separation defined in `SYSTEM_ARCHITECTURE.md`?
