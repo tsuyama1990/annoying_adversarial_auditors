@@ -46,11 +46,18 @@ class PlanAuditor:
 
         plan_str = f"## Proposed Plan\n{plan_details}"
 
+
         user_prompt = (
             f"Please audit the following plan against the requirements.\n\n"
             f"{context_str}\n"
             f"{plan_str}\n\n"
-            "Evaluate if the plan covers all requirements and is technically sound."
+            "**APPROVAL CRITERIA:**\n"
+            "- APPROVE if the plan addresses the key requirements from SPEC.md\n"
+            "- APPROVE if the plan is technically reasonable and feasible\n"
+            "- APPROVE if the plan follows a logical implementation order\n"
+            "- REJECT only if the plan is missing critical requirements or has major technical flaws\n\n"
+            "Be pragmatic: A good plan doesn't need to be perfect. "
+            "If it covers the main requirements and is technically sound, APPROVE it."
         )
 
         try:
