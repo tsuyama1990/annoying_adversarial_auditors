@@ -250,12 +250,15 @@ class CycleNodes(IGraphNodes):
 
             # CRITICAL: ONLY review application code (src/, tests/)
             # The Auditor should ONLY review what Jules was asked to create
-            # NOT framework files (dev_src/, dev_documents/, pyproject.toml, etc.)
+            # NOT framework files (dev_src/, dev_documents/, pyproject.toml, tests/ac_cdd/, etc.)
             included_prefixes = ("src/", "tests/")
+            excluded_prefixes = ("tests/ac_cdd/",)  # Framework tests
             reviewable_files = [
                 f for f in reviewable_files
                 if any(f.startswith(prefix) for prefix in included_prefixes)
+                and not any(f.startswith(prefix) for prefix in excluded_prefixes)
             ]
+
 
             if not reviewable_files:
                 console.print(
