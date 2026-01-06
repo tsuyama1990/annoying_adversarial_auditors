@@ -413,7 +413,7 @@ class JulesClient:
         return msg
 
     async def wait_for_completion(
-        self, session_name: str, require_plan_approval: bool = True
+        self, session_name: str, require_plan_approval: bool = False
     ) -> dict[str, Any]:
         """Polls for PR creation and handles user interaction (Human-in-the-loop)."""
         if self.api_client.api_key == "dummy_jules_key" and not self._is_httpx_mocked():
