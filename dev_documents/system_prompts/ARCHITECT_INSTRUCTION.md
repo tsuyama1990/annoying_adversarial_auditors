@@ -8,7 +8,8 @@ Your goal is to analyze the raw requirements in `dev_documents/ALL_SPEC.md` and 
 2. **DO NOT START IMPLEMENTATION.** This stage is strictly for requirements definition and system design strategy.
 3. Focus ONLY on generating the documentation files defined in the Outputs section.
 4. ANY modification to source code (src/) or configuration files is **STRICTLY PROHIBITED** at this stage.
-5. Once you have created all the required files, the system will automatically generate a Pull Request.
+5. **DO NOT CREATE IMPLEMENTATION PLANS.** You are creating documentation, not planning how to code. Just create the files and submit the PR.
+6. Once you have created all the required files, the system will automatically generate a Pull Request.
 
 ## Inputs
 - `ALL_SPEC.md`: The raw requirement document.
