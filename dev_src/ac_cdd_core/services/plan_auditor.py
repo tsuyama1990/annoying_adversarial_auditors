@@ -36,10 +36,16 @@ class PlanAuditor:
         )
 
     async def audit_plan(
-        self, plan_details: dict[str, Any], context_files: dict[str, str]
+        self, plan_details: dict[str, Any], context_files: dict[str, str],
+        phase: str = "coder"  # "architect" or "coder"
     ) -> PlanAuditResult:
         """
         Audits a plan against the requirements.
+        Args:
+            plan_details: The plan to audit
+            context_files: Reference requirements (SPEC.md, etc.)
+            phase: "architect" for high-level architectural plans (gen-cycles),
+                   "coder" for detailed implementation plans (run-cycle)
         """
         # Construct context
         context_str = "## Reference Requirements\n"
@@ -48,26 +54,45 @@ class PlanAuditor:
 
         plan_str = f"## Proposed Plan\n{plan_details}"
 
-
-        user_prompt = (
-            f"Please audit the following ARCHITECTURAL PLAN against the requirements.\n\n"
-            f"{context_str}\n"
-            f"{plan_str}\n\n"
-            "**IMPORTANT CONTEXT:**\n"
-            "This is an ARCHITECTURAL PLAN, not implementation code. The Architect's job is to:\n"
-            "- Define the system structure and file organization\n"
-            "- Specify what components/modules need to be created\n"
-            "- Outline the high-level approach for each cycle\n"
-            "The Architect does NOT write actual implementation code - that's the Coder's job.\n\n"
-            "**APPROVAL CRITERIA:**\n"
-            "- APPROVE if the plan identifies the key components and files needed\n"
-            "- APPROVE if the plan addresses the main requirements from SPEC.md\n"
-            "- APPROVE if the plan follows a logical implementation order\n"
-            "- Do NOT reject for lacking detailed implementation code - that's expected\n"
-            "- REJECT only if the plan is missing critical architectural components or has major structural flaws\n\n"
-            "Be pragmatic: A good architectural plan outlines WHAT to build and WHERE, not HOW to code it. "
-            "If it covers the main components and structure, APPROVE it."
-        )
+        # Different prompts for different phases
+        if phase == "architect":
+            user_prompt = (
+                f"Please audit the following ARCHITECTURAL PLAN against the requirements.\n\n"
+                f"{context_str}\n"
+                f"{plan_str}\n\n"
+                "**IMPORTANT CONTEXT:**\n"
+                "This is an ARCHITECTURAL PLAN from the Architect phase. The Architect's job is to:\n"
+                "- Define the system structure and file organization\n"
+                "- Specify what components/modules need to be created\n"
+                "- Outline the high-level approach for each cycle\n"
+                "The Architect does NOT write actual implementation code - that's the Coder's job.\n\n"
+                "**APPROVAL CRITERIA:**\n"
+                "- APPROVE if the plan identifies the key components and files needed\n"
+                "- APPROVE if the plan addresses the main requirements from SPEC.md\n"
+                "- APPROVE if the plan follows a logical implementation order\n"
+                "- Do NOT reject for lacking detailed implementation code - that's expected\n"
+                "- REJECT only if the plan is missing critical architectural components or has major structural flaws\n\n"
+                "Be pragmatic: A good architectural plan outlines WHAT to build and WHERE, not HOW to code it. "
+                "If it covers the main components and structure, APPROVE it."
+            )
+        else:  # coder phase
+            user_prompt = (
+                f"Please audit the following IMPLEMENTATION PLAN against the requirements.\n\n"
+                f"{context_str}\n"
+                f"{plan_str}\n\n"
+                "**IMPORTANT CONTEXT:**\n"
+                "This is an IMPLEMENTATION PLAN from the Coder (Jules). The Coder's job is to:\n"
+                "- Implement the actual code for the components\n"
+                "- Write tests and ensure functionality\n"
+                "- Follow the architecture defined in the Architect phase\n\n"
+                "**APPROVAL CRITERIA:**\n"
+                "- APPROVE if the plan covers the implementation steps for the current cycle\n"
+                "- APPROVE if the plan includes testing and verification\n"
+                "- APPROVE if the plan is technically sound and feasible\n"
+                "- REJECT only if the plan is missing critical implementation steps or has major technical flaws\n\n"
+                "Be pragmatic: A good implementation plan should be detailed enough to guide coding. "
+                "If it covers the main implementation tasks, APPROVE it."
+            )
 
         try:
             result = await self.agent.run(user_prompt)
