@@ -2,6 +2,7 @@ import shutil
 from pathlib import Path
 
 from ac_cdd_core.config import settings
+from ac_cdd_core.utils import logger
 
 
 class ProjectManager:
@@ -60,3 +61,95 @@ class ProjectManager:
 
         # Create other necessary dirs
         (docs_dir / "contracts").mkdir(exist_ok=True)
+
+        # Create .ac_cdd directory for configuration
+        ac_cdd_dir = Path.cwd() / ".ac_cdd"
+        ac_cdd_dir.mkdir(exist_ok=True)
+
+        # Create .env.example with all necessary configuration
+        env_example_path = ac_cdd_dir / ".env.example"
+        if not env_example_path.exists():
+            env_example_content = """# AC-CDD Configuration File
+# Copy this file to .env and fill in your actual API keys
+
+# ============================================================================
+# Required API Keys
+# ============================================================================
+
+# Jules API Key (Required for AI-powered development agent)
+# Get your key from: https://jules.googleapis.com/
+JULES_API_KEY=your-jules-api-key-here
+
+# E2B API Key (Required for sandbox execution)
+# Get your key from: https://e2b.dev/
+E2B_API_KEY=your-e2b-api-key-here
+
+# OpenRouter API Key (Required if using OpenRouter models)
+# Get your key from: https://openrouter.ai/
+OPENROUTER_API_KEY=your-openrouter-api-key-here
+
+# ============================================================================
+# Model Configuration (Simplified)
+# ============================================================================
+# You only need to set SMART_MODEL and FAST_MODEL.
+# These will be used for all agents (Auditor, QA Analyst, Reviewer, etc.)
+
+# SMART_MODEL: Used for complex tasks like code editing and architecture
+# Examples:
+#   - OpenRouter: openrouter/meta-llama/llama-3.3-70b-instruct:free
+#   - Anthropic: claude-3-5-sonnet
+#   - Gemini: gemini-2.0-flash-exp
+SMART_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
+
+# FAST_MODEL: Used for reading, auditing, and analysis tasks
+# Examples:
+#   - OpenRouter: openrouter/nousresearch/hermes-3-llama-3.1-405b:free
+#   - Anthropic: claude-3-5-sonnet
+#   - Gemini: gemini-2.0-flash-exp
+FAST_MODEL=openrouter/nousresearch/hermes-3-llama-3.1-405b:free
+
+# ============================================================================
+# Optional: Advanced Configuration
+# ============================================================================
+# Uncomment and modify these if you need fine-grained control
+
+# Override specific agent models (optional)
+# AC_CDD_AGENTS__AUDITOR_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
+# AC_CDD_AGENTS__QA_ANALYST_MODEL=openrouter/nousresearch/hermes-3-llama-3.1-405b:free
+
+# Override reviewer models (optional)
+# AC_CDD_REVIEWER__SMART_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
+# AC_CDD_REVIEWER__FAST_MODEL=openrouter/nousresearch/hermes-3-llama-3.1-405b:free
+
+# ============================================================================
+# Notes
+# ============================================================================
+# 1. After copying this to .env, make sure to add .env to .gitignore
+# 2. Never commit your actual API keys to version control
+# 3. The .env file should be placed in the project root directory
+"""
+            env_example_path.write_text(env_example_content, encoding="utf-8")
+            logger.info(f"✓ Created .env.example at {env_example_path}")
+            logger.info("  Please copy it to .env and fill in your API keys:")
+            logger.info(f"  cp {env_example_path} .env")
+
+        # Update .gitignore to exclude .env files
+        gitignore_path = Path.cwd() / ".gitignore"
+        gitignore_entries = [
+            "# AC-CDD Configuration",
+            ".env",
+            ".ac_cdd/.env",
+            "dev_documents/project_state.json",
+        ]
+
+        if gitignore_path.exists():
+            content = gitignore_path.read_text(encoding="utf-8")
+            entries_to_add = [entry for entry in gitignore_entries if entry not in content]
+            if entries_to_add:
+                with gitignore_path.open("a", encoding="utf-8") as f:
+                    f.write("\n" + "\n".join(entries_to_add) + "\n")
+                logger.info("✓ Updated .gitignore")
+        else:
+            gitignore_path.write_text("\n".join(gitignore_entries) + "\n", encoding="utf-8")
+            logger.info("✓ Created .gitignore")
+

@@ -8,7 +8,16 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env file
-load_dotenv()
+# Priority: .ac_cdd/.env > .env (root)
+_ac_cdd_env = Path.cwd() / ".ac_cdd" / ".env"
+_root_env = Path.cwd() / ".env"
+
+if _ac_cdd_env.exists():
+    load_dotenv(_ac_cdd_env, override=True)
+elif _root_env.exists():
+    load_dotenv(_root_env, override=True)
+else:
+    load_dotenv()  # Try default locations
 
 # Constants
 PROMPT_FILENAME_MAP = {
@@ -180,15 +189,16 @@ class Settings(BaseSettings):
 
     @classmethod
     def _update_agents_config(
-        cls, data: dict[str, Any], smart: str | None, fast: str | None
+        cls, data: dict[str, Any], smart: str | None, _fast: str | None
     ) -> None:
         agents = data.get("agents", {})
         if not isinstance(agents, dict):
             agents = {}
+        # Use SMART_MODEL for both auditor and QA analyst (critical tasks)
         if smart and "auditor_model" not in agents:
             agents["auditor_model"] = smart
-        if fast and "qa_analyst_model" not in agents:
-            agents["qa_analyst_model"] = fast
+        if smart and "qa_analyst_model" not in agents:
+            agents["qa_analyst_model"] = smart
         data["agents"] = agents
 
     @classmethod

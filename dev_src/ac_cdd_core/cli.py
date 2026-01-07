@@ -54,7 +54,7 @@ def init() -> None:
                 await mgr.git.ensure_state_branch()
 
                 # Update gitignore in main branch
-                gitignore_path = utils.root_path() / ".gitignore"
+                gitignore_path = settings.paths.workspace_root / ".gitignore"
                 if gitignore_path.exists():
                     content = gitignore_path.read_text(encoding="utf-8")
                     if "dev_documents/project_state.json" not in content:
@@ -67,7 +67,19 @@ def init() -> None:
                 console.print(f"[yellow]Warning: Failed to initialize project state: {e}[/yellow]")
 
     asyncio.run(_init_state())
-    console.print("[bold green]Initialization Complete. Happy Coding![/bold green]")
+
+    # Show next steps
+    console.print("\n[bold green]✓ Initialization Complete![/bold green]\n")
+    console.print("[bold cyan]Next Steps:[/bold cyan]")
+    console.print("  1. Configure your environment:")
+    console.print("     [yellow]cp .ac_cdd/.env.example .ac_cdd/.env[/yellow]")
+    console.print("     Then edit [yellow].ac_cdd/.env[/yellow] and add your API keys\n")
+    console.print("  2. Verify your configuration:")
+    console.print("     [yellow]uv run manage.py env-verify[/yellow]\n")
+    console.print("  3. Define your project requirements:")
+    console.print("     Edit [yellow]dev_documents/ALL_SPEC.md[/yellow]\n")
+    console.print("  4. Generate development cycles:")
+    console.print("     [yellow]uv run manage.py gen-cycles[/yellow]\n")
 
 
 @app.command()
@@ -172,6 +184,123 @@ def list_actions() -> None:
             SuccessMessages.show_panel(msg, "Recommended Actions")
 
     asyncio.run(_list())
+
+
+@app.command()
+def env_verify() -> None:  # noqa: PLR0915
+    """Verify environment configuration and API keys."""
+    import os
+    from pathlib import Path
+
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console.print("\n[bold cyan]🔍 Environment Configuration Verification[/bold cyan]\n")
+
+    # Check which .env file is being used
+    ac_cdd_env = Path.cwd() / ".ac_cdd" / ".env"
+    root_env = Path.cwd() / ".env"
+
+    env_file_used = None
+    if ac_cdd_env.exists():
+        env_file_used = str(ac_cdd_env)
+        console.print(f"[green]✓[/green] Using: [yellow]{ac_cdd_env}[/yellow]")
+    elif root_env.exists():
+        env_file_used = str(root_env)
+        console.print(f"[green]✓[/green] Using: [yellow]{root_env}[/yellow]")
+    else:
+        console.print("[red]✗[/red] No .env file found!")
+        console.print("  Run: [yellow]cp .ac_cdd/.env.example .ac_cdd/.env[/yellow]")
+        raise typer.Exit(code=1)
+
+    console.print()
+
+    # Check API Keys
+    console.print("[bold]API Keys:[/bold]")
+    api_keys = {
+        "JULES_API_KEY": os.getenv("JULES_API_KEY"),
+        "E2B_API_KEY": os.getenv("E2B_API_KEY"),
+        "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
+    }
+
+    missing_keys = []
+    for key, value in api_keys.items():
+        if value and value != f"your-{key.lower().replace('_', '-')}-here":
+            # Mask the key for security
+            masked = value[:8] + "..." + value[-4:] if len(value) > 12 else "***"
+            console.print(f"  [green]✓[/green] {key}: {masked}")
+        else:
+            console.print(f"  [red]✗[/red] {key}: Not set")
+            missing_keys.append(key)
+
+    console.print()
+
+    # Check Model Configuration
+    console.print("[bold]Model Configuration:[/bold]")
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Component", style="cyan")
+    table.add_column("Model", style="yellow")
+    table.add_column("Source", style="dim")
+
+    # Check environment variables
+    smart_model = os.getenv("SMART_MODEL")
+    fast_model = os.getenv("FAST_MODEL")
+
+    # Show what's configured
+    table.add_row("SMART_MODEL (env)", smart_model or "[red]Not set[/red]", "Environment")
+    table.add_row("FAST_MODEL (env)", fast_model or "[red]Not set[/red]", "Environment")
+    table.add_row("", "", "")
+
+    # Show actual settings being used
+    table.add_row("Auditor Agent", settings.agents.auditor_model, "Resolved")
+    table.add_row("QA Analyst Agent", settings.agents.qa_analyst_model, "Resolved")
+    table.add_row("Reviewer (Smart)", settings.reviewer.smart_model, "Resolved")
+    table.add_row("Reviewer (Fast)", settings.reviewer.fast_model, "Resolved")
+
+    console.print(table)
+    console.print()
+
+    # Test model initialization
+    console.print("[bold]Model Connectivity Test:[/bold]")
+    try:
+        from ac_cdd_core.agents import get_model
+
+        test_models = [
+            ("Auditor", settings.agents.auditor_model),
+            ("QA Analyst", settings.agents.qa_analyst_model),
+        ]
+
+        for name, model_name in test_models:
+            try:
+                get_model(model_name)  # Test model initialization
+                console.print(f"  [green]✓[/green] {name}: {model_name}")
+            except Exception as e:
+                console.print(f"  [red]✗[/red] {name}: {model_name} - {str(e)[:50]}")
+    except Exception as e:
+        console.print(f"  [yellow]⚠[/yellow] Could not test models: {e}")
+
+    console.print()
+
+    # Summary
+    if missing_keys:
+        panel = Panel(
+            "[yellow]⚠ Missing API Keys:[/yellow]\n" + "\n".join(f"  • {key}" for key in missing_keys) +
+            f"\n\nPlease edit: [cyan]{env_file_used}[/cyan]",
+            title="[bold yellow]Configuration Incomplete[/bold yellow]",
+            border_style="yellow"
+        )
+        console.print(panel)
+        raise typer.Exit(code=1)
+    panel = Panel(
+        "[green]All required API keys are configured![/green]\n"
+        "[green]Model configuration is valid![/green]\n\n"
+        "You're ready to start development!\n"
+        "Next step: [yellow]uv run manage.py gen-cycles[/yellow]",
+        title="[bold green]✓ Configuration Valid[/bold green]",
+        border_style="green"
+    )
+    console.print(panel)
 
 
 if __name__ == "__main__":

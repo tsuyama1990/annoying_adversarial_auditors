@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import tempfile
 from pathlib import Path
@@ -430,17 +431,30 @@ class GitManager:
         logger.info(f"Creating orphan branch: {self.STATE_BRANCH}")
 
         with tempfile.TemporaryDirectory():
-            # Create an empty tree object
-            empty_tree, _, _ = await self.runner.run_command(
-                [self.git_cmd, "mktree"], input_str="", check=True
+            # Create an empty tree object using asyncio directly (ProcessRunner doesn't support stdin)
+            process = await asyncio.create_subprocess_exec(
+                self.git_cmd, "mktree",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            empty_tree = empty_tree.strip()
+            stdout, stderr = await process.communicate(input=b"")
+            if process.returncode != 0:
+                error_msg = f"git mktree failed: {stderr.decode()}"
+                raise RuntimeError(error_msg)
+            empty_tree = stdout.decode().strip()
 
             # Create a commit object from the empty tree
-            commit_hash, _, _ = await self.runner.run_command(
-                [self.git_cmd, "commit-tree", empty_tree, "-m", "Initial state branch"], check=True
+            process = await asyncio.create_subprocess_exec(
+                self.git_cmd, "commit-tree", empty_tree, "-m", "Initial state branch",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            commit_hash = commit_hash.strip()
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                error_msg = f"git commit-tree failed: {stderr.decode()}"
+                raise RuntimeError(error_msg)
+            commit_hash = stdout.decode().strip()
 
             # Update the ref for the new branch
             await self._run_git(

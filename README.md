@@ -92,38 +92,61 @@ AC-CDD is designed as a **containerized CLI tool**. You do not clone the tool's 
 
 ### Configuration
 
-The system is configured via environment variables. You can place them in a `.env` file in your project root, or in a global configuration file at `~/.ac_cdd/.env`.
+The system is configured via environment variables. Run `ac-cdd init` to generate a `.env.example` file in the `.ac_cdd/` directory with all necessary configuration options.
+
+#### Quick Setup
+
+1. **Initialize your project:**
+   ```bash
+   ac-cdd init
+   ```
+
+2. **Copy the example configuration:**
+   ```bash
+   cp .ac_cdd/.env.example .env
+   ```
+
+3. **Fill in your API keys in `.env`**
 
 #### API Keys
 
-Create a `.env` file:
+The `.env` file should contain:
 
 ```env
-# Jules API (Architect/Coder)
-JULES_API_KEY=your_jules_key
+# Required API Keys
+JULES_API_KEY=your-jules-api-key-here
+E2B_API_KEY=your-e2b-api-key-here
+OPENROUTER_API_KEY=your-openrouter-api-key-here
 
-# Sandbox (Execution)
-E2B_API_KEY=e2b_...
-
-# GitHub Authentication (Required)
-GH_TOKEN=ghp_...
-
-# Models (Auditor/QA)
-OPENROUTER_API_KEY=sk-or-...
-# Or specific keys: GEMINI_API_KEY, ANTHROPIC_API_KEY
+# Simplified Model Configuration
+# These two settings control ALL agents (Auditor, QA Analyst, Reviewer, etc.)
+SMART_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
+FAST_MODEL=openrouter/nousresearch/hermes-3-llama-3.1-405b:free
 ```
 
-#### Multi-Model Configuration
+#### Model Configuration (Simplified)
 
-You can configure different models for different agents to optimize for cost and intelligence.
+You only need to set **two environment variables** for model configuration:
 
-**Example `.env` configuration (Hybrid):**
+- **`SMART_MODEL`**: Used for complex tasks (code editing, architecture, auditing)
+- **`FAST_MODEL`**: Used for reading and analysis tasks
+
+**Supported Model Formats:**
+- OpenRouter: `openrouter/provider/model-name`
+- Anthropic: `claude-3-5-sonnet`
+- Gemini: `gemini-2.0-flash-exp`
+
+**Advanced Configuration (Optional):**
+
+If you need fine-grained control over specific agents, you can override individual models:
 
 ```env
-# Smart model for Jules (fixing/refinement) - High capability required
-AC_CDD_REVIEWER__SMART_MODEL=claude-3-5-sonnet
+# Override specific agent models (optional)
+AC_CDD_AGENTS__AUDITOR_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
+AC_CDD_AGENTS__QA_ANALYST_MODEL=openrouter/meta-llama/llama-3.3-70b-instruct:free
 
-# Fast model for LLMReviewer (auditing) & QA Analyst - Speed & context required
+# Override reviewer models (optional)
+AC_CDD_REVIEWER__SMART_MODEL=claude-3-5-sonnet
 AC_CDD_REVIEWER__FAST_MODEL=gemini-2.0-flash-exp
 ```
 
