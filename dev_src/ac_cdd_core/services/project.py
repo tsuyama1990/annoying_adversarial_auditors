@@ -62,6 +62,13 @@ class ProjectManager:
         # Create other necessary dirs
         (docs_dir / "contracts").mkdir(exist_ok=True)
 
+        # Create system_prompts directory and default templates
+        system_prompts_dir = docs_dir / "system_prompts"
+        system_prompts_dir.mkdir(exist_ok=True)
+
+        # Copy default instruction templates if they don't exist
+        self._copy_default_templates(system_prompts_dir)
+
         # Create .ac_cdd directory for configuration
         ac_cdd_dir = Path.cwd() / ".ac_cdd"
         ac_cdd_dir.mkdir(exist_ok=True)
@@ -152,4 +159,35 @@ FAST_MODEL=openrouter/nousresearch/hermes-3-llama-3.1-405b:free
         else:
             gitignore_path.write_text("\n".join(gitignore_entries) + "\n", encoding="utf-8")
             logger.info("✓ Created .gitignore")
+
+    def _copy_default_templates(self, system_prompts_dir: Path) -> None:
+        """Copy default instruction templates to system_prompts directory."""
+        # Define template files to copy
+        template_files = [
+            "ARCHITECT_INSTRUCTION.md",
+            "AUDITOR_INSTRUCTION.md",
+            "CODER_INSTRUCTION.md",
+            "UAT_DESIGN.md",
+        ]
+
+        # Source directory: current project's dev_documents/system_prompts
+        source_dir = Path(__file__).parent.parent.parent.parent / "dev_documents" / "system_prompts"
+
+        if not source_dir.exists():
+            logger.warning(f"Template source directory not found: {source_dir}")
+            return
+
+        for template_file in template_files:
+            source_file = source_dir / template_file
+            dest_file = system_prompts_dir / template_file
+
+            # Only copy if source exists and destination doesn't exist
+            if source_file.exists() and not dest_file.exists():
+                try:
+                    shutil.copy(source_file, dest_file)
+                    logger.info(f"✓ Created {template_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to copy {template_file}: {e}")
+            elif dest_file.exists():
+                logger.debug(f"Skipping {template_file} (already exists)")
 
