@@ -43,13 +43,13 @@ async def test_committee_logic_flow() -> None:
         assert route == "auditor"
 
         # Auditor 2: Approved
-        state.current_auditor_index = 2
+        state.update(res)
         res = await nodes.committee_manager_node(state)
         assert res["status"] == "next_auditor"
         assert res["current_auditor_index"] == 3
 
         # Auditor 3: Approved (Last one)
-        state.current_auditor_index = 3
+        state.update(res)
         res = await nodes.committee_manager_node(state)
         assert res["status"] == "cycle_approved"
 

@@ -58,6 +58,14 @@ async def test_run_session_approved_first_try(
 async def test_run_session_rejected_then_approved(
     orchestrator: AuditOrchestrator, mock_jules: MagicMock, mock_auditor: MagicMock
 ) -> None:
+    """
+    Tests the scenario where the first plan is rejected and the second plan is approved.
+    This test verifies the following logic:
+    1. The orchestrator sends the feedback for the rejected plan to Jules.
+    2. The orchestrator polls for a new plan until it receives one with a different ID.
+    3. The orchestrator audits the new plan.
+    4. The orchestrator approves the new plan.
+    """
     # First plan: Rejected
     # Second plan: Approved
 
@@ -88,11 +96,11 @@ async def test_run_session_rejected_then_approved(
 
     await orchestrator.run_interactive_session("prompt", {"spec": "data"})
 
-    # Check that we sent feedback
+    # Check that we sent feedback for the rejected plan
     mock_jules.send_message.assert_called_once()
     assert "Fix X" in mock_jules.send_message.call_args[0][1]
 
-    # Check that we eventually approved plan-2
+    # Check that we eventually approved the new plan (plan-2)
     mock_jules.approve_plan.assert_called_with("sess-1", "plan-2")
 
 
