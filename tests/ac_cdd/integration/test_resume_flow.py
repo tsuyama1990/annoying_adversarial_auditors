@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from ac_cdd_core.domain_models import CycleManifest
+
 from ac_cdd_core.graph_nodes import CycleNodes
 
 
