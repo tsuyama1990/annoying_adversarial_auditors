@@ -28,7 +28,7 @@ environments = ["sys_platform == 'linux'"]
 [project.scripts]
 ac-cdd = "ac_cdd_core.cli:app"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "shellingham",
     "pytest",
@@ -120,13 +120,12 @@ max-complexity = 10  # Exceeding this prompts function splitting (prevent AI lon
 suppress-dummy-args = true  # Arguments starting with _ do not require type hints
 
 [tool.pytest.ini_options]
-addopts = "--cov=src --cov-report=term-missing"
+addopts = "--cov=dev_src --cov=src --cov-report=term-missing"
 testpaths = ["tests"]
-pythonpath = ["src"]
 
 [tool.mypy]
 strict = true
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ac_cdd_core"]
+packages = ["dev_src/ac_cdd_core", "src/mlip_autopipec"]

@@ -1,0 +1,102 @@
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from ac_cdd_core.config import Settings
+from ac_cdd_core.service_container import ServiceContainer
+
+
+@pytest.fixture(autouse=True)
+def mock_settings(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Mock the global settings object and env vars for all unit tests."""
+    # Pre-emptively set environment variables to avoid pydantic-ai import errors
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("JULES_API_KEY", "dummy_key_for_test")
+    monkeypatch.setenv("E2B_API_KEY", "dummy_key_for_test")
+
+    # Set required settings for AgentsConfig to pass validation
+    monkeypatch.setenv("AC_CDD_AUDITOR_MODEL", "openai:gpt-4o")
+    monkeypatch.setenv("AC_CDD_QA_ANALYST_MODEL", "openai:gpt-4o")
+
+    # Set required settings for ReviewerConfig to pass validation
+    monkeypatch.setenv("AC_CDD_REVIEWER__SMART_MODEL", "openai:gpt-4o")
+    monkeypatch.setenv("AC_CDD_REVIEWER__FAST_MODEL", "openai:gpt-3.5-turbo")
+
+    # Create a default Settings object (using defaults defined in class)
+    try:
+        real_defaults = Settings()
+    except Exception:
+        # Fallback if creation fails (e.g. missing required env vars if any)
+        real_defaults = MagicMock()
+
+    with patch("ac_cdd_core.config.settings", real_defaults):
+        yield real_defaults
+
+
+@pytest.fixture
+def mock_file_patcher() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_contract_manager() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_artifact_manager() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_presenter() -> MagicMock:
+    presenter = MagicMock()
+    presenter.review_and_confirm.return_value = True
+    return presenter
+
+
+@pytest.fixture
+def mock_jules() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_reviewer() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_git() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_services(
+    mock_file_patcher: MagicMock,
+    mock_contract_manager: MagicMock,
+    mock_artifact_manager: MagicMock,
+    mock_presenter: MagicMock,
+    mock_jules: MagicMock,
+    mock_reviewer: MagicMock,
+    mock_git: MagicMock,
+) -> ServiceContainer:
+    return ServiceContainer(
+        file_patcher=mock_file_patcher,
+        contract_manager=mock_contract_manager,
+        artifact_manager=mock_artifact_manager,
+        jules=mock_jules,
+        reviewer=mock_reviewer,
+        git=mock_git,
+    )
+
+
+@pytest.fixture
+def mock_agent_result() -> Any:
+    def _create_result(output_data: Any) -> MagicMock:
+        result = MagicMock()
+        result.output = output_data
+        return result
+
+    return _create_result
