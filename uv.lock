@@ -197,7 +197,7 @@ dependencies = [
     { name = "typer", marker = "sys_platform == 'linux'" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 dev = [
     { name = "bandit", marker = "sys_platform == 'linux'" },
     { name = "google-genai", marker = "sys_platform == 'linux'" },
@@ -216,35 +216,32 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bandit", marker = "extra == 'dev'" },
     { name = "e2b-code-interpreter", specifier = ">=2.4.1" },
     { name = "google-auth", specifier = ">=2.43.0" },
+    { name = "google-genai", marker = "extra == 'dev'" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "langgraph", specifier = ">=1.0.5" },
     { name = "litellm", specifier = ">=1.80.11" },
+    { name = "mypy", marker = "extra == 'dev'" },
+    { name = "playwright", marker = "extra == 'dev'" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },
     { name = "pydantic", specifier = "~=2.11.0" },
     { name = "pydantic-ai", specifier = ">=0.0.18" },
     { name = "pydantic-settings" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.3.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-dotenv" },
     { name = "rich" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "shellingham", marker = "extra == 'dev'" },
     { name = "typer" },
+    { name = "types-pyyaml", marker = "extra == 'dev'" },
+    { name = "vcrpy", marker = "extra == 'dev'" },
 ]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "bandit" },
-    { name = "google-genai" },
-    { name = "hypothesis" },
-    { name = "mypy" },
-    { name = "playwright" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "pytest" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "shellingham" },
-    { name = "types-pyyaml" },
-    { name = "vcrpy" },
-]
+provides-extras = ["dev"]
 
 [[package]]
 name = "bandit"
